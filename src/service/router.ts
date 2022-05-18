@@ -2,6 +2,7 @@ import { ClientRequestInfo, GRPCEventType, GRPCRequest, ResponseMetaInformation 
 import { ProtoService } from './../api/protobuf';
 import { ProtoInfo } from './../api/protoInfo';
 import { Readable, Writable } from 'stream';
+// eslint-disable-next-line import/no-extraneous-dependencies
 import { v4 as uuid } from 'uuid';
 /*
  * Copyright 2020 The Backstage Authors
@@ -33,14 +34,14 @@ import { parse } from 'protobufjs';
 import { Proto } from 'bloomrpc-mock';
 
 const storage = multer.diskStorage({
-  destination: function (req, file, callback) {
-      callback(null, resolvePackagePath(
-        '@backstage/plugin-bloomrpc-backend',
-        'uploads/',
-      ));
+  destination: function (_req, _file, callback) {
+    callback(null, resolvePackagePath(
+      '@backstage/plugin-bloomrpc-backend',
+      'uploads/',
+    ));
   },
-  filename: function (req, file, callback) {
-      callback(null, file.originalname);
+  filename: function (_req, file, callback) {
+    callback(null, file.originalname);
   }
 });
 
@@ -85,7 +86,9 @@ export async function createRouter(
 
       const protofiles = await loadProtos(filePaths);
       console.log('OUTPUT ~ router.post ~ protofiles', protofiles);
-      return res.send({ status: 'ok', protos: protofiles });
+      res.send({ status: 'ok', protos: protofiles });
+
+      return;
     }
 
     res.send({ status: 'ok' });
@@ -177,101 +180,9 @@ export async function createRouter(
       .on(GRPCEventType.ERROR, onError)
       .on(GRPCEventType.END, onEnd)
       .send();
-    
+
     // countdown(res, 1, 10);
   });
-
-  router.post('/send-request-stream', async (req, res) => {
-    // const clientRequest = await validateRequestBody(req, sendRequestInput);
-    // console.log('OUTPUT ~ router.post ~ clientRequest', clientRequest);
-    req.on('data', async (data: ReadableStream) => {
-      try {
-        const realData = data.toString();
-        const reader = data.getReader();
-        const { done, value } = await reader.read();
-        console.log('OUTPUT ~ req.on ~ value', value);
-        console.log('got data from req');
-      } catch (err) {
-        console.log('OUTPUT ~ req.on ~ err', err);
-      }
-    });
-
-    const {
-      proto: protoText,
-      methodName,
-      serviceName,
-      url,
-      stream,
-      interactive,
-    } = req.body;
-
-    console.log('OUTPUT ~ router.post ~ req.body', req.body);
-
-    console.log('OUTPUT ~ router.post ~ stream', stream);
-
-    const root = parse(protoText).root;
-    const ast = loadPackageDefinition(fromJSON(root));
-
-    const proto = {
-      ast,
-      root,
-    } as Proto;
-
-    const services = parseServices(proto);
-
-    const service: ProtoService = services[serviceName];
-    const protoInfo = new ProtoInfo(service, methodName);
-
-    const grpcRequest = new GRPCRequest({
-      url,
-      requestData,
-      protoInfo,
-      interactive,
-    });
-
-    function onError(e: any, metaInfo: ResponseMetaInformation) {
-      res.write(JSON.stringify({
-        error: e,
-        metaInfo,
-      }))
-    }
-
-    if (grpcRequest.isServerStreaming || grpcRequest.isClientStreaming) {
-      res.writeHead(200, {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive'
-      })
-    } else {
-      res.writeHead(200, {
-        'Content-Type': 'application/json'
-      })
-    }
-
-    function onEnd() {
-      // res.end();
-    }
-
-    function onData(data: object, metaInfo: ResponseMetaInformation) {
-      console.log('OUTPUT ~ onData ~ metaInfo', metaInfo);
-      console.log('OUTPUT ~ onData ~ data', data);
-
-      const chunk = JSON.stringify({
-        data,
-        metaInfo
-      });
-
-      console.log('OUTPUT ~ onData ~ chunk', chunk);
-
-      res.write(chunk);
-    }
-
-    grpcRequest
-      .on(GRPCEventType.DATA, onData)
-      .on(GRPCEventType.ERROR, onError)
-      .on(GRPCEventType.END, onEnd)
-      .send();
-  })
 
   router.use(errorHandler());
   return router;
