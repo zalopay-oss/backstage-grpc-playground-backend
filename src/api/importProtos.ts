@@ -192,7 +192,7 @@ export function parseServices(proto: Proto) {
 }
 
 export function importResolvePath(): Promise<string | null> {
-  return new Promise(async (resolve, reject) => {
+  return new Promise(async (resolve) => {
     // const openDialogResult = await remote.dialog.showOpenDialog(remote.getCurrentWindow(), {
     //   properties: ['openDirectory'],
     //   filters: []
