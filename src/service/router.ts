@@ -1,37 +1,23 @@
-import { ClientRequestInfo, GRPCEventType, GRPCRequest, ResponseMetaInformation } from './../api/sendRequest';
-import { ProtoService } from './../api/protobuf';
-import { ProtoInfo } from './../api/protoInfo';
-import { Readable, Writable } from 'stream';
-// eslint-disable-next-line import/no-extraneous-dependencies
-import { v4 as uuid } from 'uuid';
-/*
- * Copyright 2020 The Backstage Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
- */
-
+import { loadPackageDefinition } from '@grpc/grpc-js';
+import { fromJSON } from '@grpc/proto-loader';
+import { parse } from 'protobufjs';
+import { Proto } from 'bloomrpc-mock';
 import { errorHandler, resolvePackagePath } from '@backstage/backend-common';
 import express from 'express';
 import Router from 'express-promise-router';
 import { Logger } from 'winston';
-import multer, { Multer } from 'multer';
-import { loadProtos, parseServices } from '../api/importProtos';
-import { sendRequestInput, validateRequestBody } from './utils';
-import { loadPackageDefinition, Metadata } from '@grpc/grpc-js';
+import multer from 'multer';
 // eslint-disable-next-line import/no-extraneous-dependencies
-import { fromJSON } from '@grpc/proto-loader';
-import { parse } from 'protobufjs';
-import { Proto } from 'bloomrpc-mock';
+import { v4 as uuid } from 'uuid';
+
+import {
+  ProtoService, ProtoInfo,
+  GRPCRequest, GRPCEventType,
+  ResponseMetaInformation,
+  loadProtos, parseServices,
+} from './../api';
+
+import { sendRequestInput, validateRequestBody } from './utils';
 
 const storage = multer.diskStorage({
   destination: function (_req, _file, callback) {
