@@ -181,6 +181,11 @@ export async function createRouter(
       .on(GRPCEventType.END, onEnd)
       .send();
 
+    req.once('close', () => {
+      console.log('request closed');
+      grpcRequest.cancel();
+    })
+
     // countdown(res, 1, 10);
   });
 

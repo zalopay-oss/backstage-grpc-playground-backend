@@ -2,12 +2,30 @@
 /* eslint-disable no-param-reassign */
 import { EventEmitter } from "events";
 import { ProtoInfo } from './protoInfo';
-import { Client, credentials, Metadata, ServiceClientConstructor, ServiceError } from '@grpc/grpc-js';
+import {
+  Client, credentials, Metadata, ServiceClientConstructor, ServiceError,
+  ClientUnaryCall, ClientWritableStream, ClientReadableStream, CallOptions,
+} from '@grpc/grpc-js';
 import * as fs from "fs";
 import { Certificate } from "./types";
 
 interface ServiceClient extends Client {
   [methodName: string]: Function;
+}
+
+interface PartialUnaryFunction<RequestType = any, ResponseType = any> {
+  // (argument: RequestType, metadata: Metadata, options: CallOptions, callback: (err: ServiceError, response: ResponseType) => void): ClientUnaryCall;
+  (argument: RequestType, metadata: Metadata, options: CallOptions, callback: (err: ServiceError, response: ResponseType) => void): GRPCCall;
+}
+
+interface PartialClientStreamFunction<RequestType = any, ResponseType = any> {
+  // (metadata: Metadata, options: CallOptions, callback: (err: ServiceError, response: ResponseType) => void): ClientWritableStream<RequestType>;
+  (metadata: Metadata, options: CallOptions, callback: (err: ServiceError, response: ResponseType) => void): GRPCCall;
+}
+
+interface PartialServerStreamFunction<RequestType = any, ResponseType = any> {
+  // (argument: RequestType, metadata: Metadata, options: CallOptions, callback: (err: ServiceError, response: ResponseType) => void): ClientReadableStream<ResponseType>;
+  (argument: RequestType, metadata: Metadata, options: CallOptions, callback: (err: ServiceError, response: ResponseType) => void): GRPCCall;
 }
 
 export interface GRPCEventEmitter extends EventEmitter {
@@ -42,13 +60,22 @@ export type ClientRequestInfo = {
   metadata: Record<string, string>;
 }
 
+interface GRPCCall extends EventEmitter {
+  write(chunk: any, cb?: Function): boolean;
+  cancel(): void;
+  end(): void;
+}
+
+type GRPCCaller = (...args: any[]) => GRPCCall;
+
 export class GRPCRequest extends EventEmitter {
   url: string;
   protoInfo: ProtoInfo;
   requestData: ClientRequestInfo;
   interactive?: boolean;
   tlsCertificate?: Certificate;
-  _call?: any;
+  // _call?: ClientUnaryCall | ClientReadableStream<any> | ClientWritableStream<any>;
+  _call?: GRPCCall;
   isUnary: boolean = false;
   isClientStreaming: boolean = false;
   isServerStreaming: boolean = false;
@@ -78,7 +105,7 @@ export class GRPCRequest extends EventEmitter {
   send(): GRPCRequest {
     const serviceClient = this.protoInfo.client();
     const client: ServiceClient = this.getClient(serviceClient);
-    const { inputs, metadata } = this.requestData; 
+    const { inputs, metadata } = this.requestData;
 
     // Add metadata
     const md = new Metadata();
@@ -112,10 +139,11 @@ export class GRPCRequest extends EventEmitter {
     const methodDefinition = this.protoInfo.methodDef();
 
     // TODO: find proper type for call
-    let call: any;
+    // let call: ClientUnaryCall | ClientReadableStream<any> | ClientWritableStream<any>;
+    let call: GRPCCall;
     const requestStartTime = new Date();
 
-    const method: Function = client[this.protoInfo.methodName].bind(client);
+    const method: GRPCCaller = client[this.protoInfo.methodName].bind(client);
 
     if (methodDefinition.requestStream) {
       // Client side streaming
@@ -127,6 +155,7 @@ export class GRPCRequest extends EventEmitter {
 
     // Server Streaming.
     if (methodDefinition.responseStream) {
+      // this.handleServerStreaming(call as ClientReadableStream<any>, requestStartTime);
       this.handleServerStreaming(call, requestStartTime);
     }
 
@@ -154,6 +183,7 @@ export class GRPCRequest extends EventEmitter {
       } catch (e) {
         return this;
       }
+
       this._call.write(inputs);
     }
     return this;
@@ -215,8 +245,9 @@ export class GRPCRequest extends EventEmitter {
    * @param md
    * @param requestStartTime
    */
-  private clientSideStreaming(method: Function, inputs: any, md: Metadata, requestStartTime?: Date) {
-    const call = method(md, (err: ServiceError, response: any) => {
+  // private clientSideStreaming(method: PartialClientStreamFunction, inputs: any, md: Metadata, requestStartTime?: Date) {
+  private clientSideStreaming(method: GRPCCaller, inputs: any, md: Metadata, requestStartTime?: Date): GRPCCall {
+    const call = method(md, { deadline: this.getRPCDeadline() }, (err: ServiceError, response: any) => {
       this.handleUnaryResponse(err, response, requestStartTime);
     });
 
@@ -228,11 +259,28 @@ export class GRPCRequest extends EventEmitter {
       call.write(inputs);
     }
 
-    // if (!this.interactive) {
     call.end();
-    // }
 
     return call;
+  }
+
+  private getRPCDeadline(rpcType = 1) {
+    let timeAllowed = 5000;
+
+    switch (rpcType) {
+      case 1:
+        timeAllowed = 5000  // LIGHT RPC
+        break
+
+      case 2:
+        timeAllowed = 7000  // HEAVY RPC
+        break
+
+      default:
+        console.log("Invalid RPC Type: Using Default Timeout")
+    }
+
+    return new Date(Date.now() + timeAllowed)
   }
 
   /**
@@ -240,7 +288,8 @@ export class GRPCRequest extends EventEmitter {
    * @param call
    * @param streamStartTime
    */
-  private handleServerStreaming(call: any, streamStartTime?: Date) {
+  // private handleServerStreaming(call: ClientReadableStream<any>, streamStartTime?: Date) {
+  private handleServerStreaming(call: GRPCCall, streamStartTime?: Date) {
 
     call.on('data', (data: object) => {
       const responseMetaInformation = this.responseMetaInformation(streamStartTime, true);
@@ -273,8 +322,9 @@ export class GRPCRequest extends EventEmitter {
    * @param md
    * @param requestStartTime
    */
-  private unaryCall(method: Function, inputs: any, md: Metadata, requestStartTime?: Date) {
-    return method(inputs, md, (err: ServiceError, response: any) => {
+  // private unaryCall(method: PartialUnaryFunction | PartialServerStreamFunction, inputs: any, md: Metadata, requestStartTime?: Date): ClientUnaryCall | ClientReadableStream<any> {
+  private unaryCall(method: GRPCCaller, inputs: any, md: Metadata, requestStartTime?: Date): GRPCCall {
+    return method(inputs, md, { deadline: this.getRPCDeadline() }, (err: ServiceError, response: any) => {
       this.handleUnaryResponse(err, response, requestStartTime);
     });
   }
@@ -294,7 +344,7 @@ export class GRPCRequest extends EventEmitter {
       if (err.code === 1) {
         return;
       }
-      
+
       this.emit(GRPCEventType.ERROR, err, responseMetaInformation);
 
     } else {
