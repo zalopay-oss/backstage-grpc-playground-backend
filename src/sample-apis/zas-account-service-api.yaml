@@ -8,9 +8,9 @@ spec:
   lifecycle: production
   owner: accounting-core
   definition:
-    $file: https://gitlab.zalopay.vn/accounting/zas/zas-spec/-/blob/master/api/zas/account.proto;
+    $file: https://gitlab.zalopay.vn/accounting/zas/zas-spec/-/blob/master/api/zas/account.proto
   imports:
-    - $text: https://gitlab.zalopay.vn/accounting/zas/zas-spec/-/blob/master/api/zas/common.proto;
+    - $text: https://gitlab.zalopay.vn/accounting/zas/zas-spec/-/blob/master/api/zas/common.proto
   targets:
     - env: dev
       url: http://192.168.1.23:4500
