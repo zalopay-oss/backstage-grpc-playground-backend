@@ -1,6 +1,4 @@
-/* eslint-disable import/no-extraneous-dependencies */
-// @ts-ignore
-import { Client, ServiceClientConstructor } from '@grpc/grpc-js';
+import { ServiceClientConstructor } from '@grpc/grpc-js';
 import { get as lodashGet } from 'lodash';
 import { ProtoService } from './protobuf';
 

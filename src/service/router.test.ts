@@ -14,7 +14,9 @@
  * limitations under the License.
  */
 
-import { getVoidLogger } from '@backstage/backend-common';
+import { getVoidLogger, UrlReader } from '@backstage/backend-common';
+import { ScmIntegrationRegistry } from '@backstage/integration';
+import { PlaceholderResolverRead } from '@backstage/plugin-catalog-backend';
 import express from 'express';
 import request from 'supertest';
 
@@ -24,9 +26,15 @@ describe('createRouter', () => {
   let app: express.Express;
 
   beforeAll(async () => {
+    const read: jest.MockedFunction<PlaceholderResolverRead> = jest.fn();
+    const reader: UrlReader = { read, readTree: jest.fn(), search: jest.fn() };
+
     const router = await createRouter({
       logger: getVoidLogger(),
+      reader,
+      integrations: {} as unknown as ScmIntegrationRegistry,
     });
+
     app = express().use(router);
   });
 

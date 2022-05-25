@@ -1,173 +1,163 @@
-/* eslint-disable @typescript-eslint/no-unused-expressions */
-// import {remote} from 'electron';
-import {fromFileName, mockRequestMethods, Proto, walkServices} from 'bloomrpc-mock';
-import * as path from 'path';
-import {ProtoFile, ProtoService} from './protobuf';
-import {Service} from 'protobufjs';
-import {Client} from 'grpc-reflection-js';
-import {credentials, loadObject, loadPackageDefinition} from '@grpc/grpc-js';
-import isURL from 'validator/lib/isURL';
+import path from 'path';
+import fs from 'fs';
+import { partial, uniq } from 'lodash';
+import { Service } from 'protobufjs';
 
-const commonProtosPath: string[] = [];
+import { fromFileName, mockRequestMethods, Proto, walkServices } from './bloomrpc-mock';
+import { EntitySpec, MissingImportFile, WritableFile } from './types';
+import { ProtoFile, ProtoService } from './protobuf';
+import { CustomPlaceholderProcessor } from './placeholderProcessor';
+import { NotImplementedError } from './error';
+import { getAllPossibleSubPaths, LoadProtoStatus, getRelativePath, getAbsolutePath } from '../service/utils';
 
-export type OnProtoUpload = (protoFiles: ProtoFile[], err?: Error) => void
+export type LoadProtoResult = {
+  protos: ProtoFile[];
+  missingImports?: MissingImportFile[];
+  status?: LoadProtoStatus;
+};
 
-/**
- * Upload protofiles
- * @param onProtoUploaded
- * @param importPaths
- */
-export async function importProtos(onProtoUploaded: OnProtoUpload, importPaths?: string[]) {
-  const filePaths: string[] = [];
+export function ensureDirectoryExistence(filePath: string) {
+  const dirname = path.dirname(filePath);
 
-  if (!filePaths || !filePaths.length) {
+  if (fs.existsSync(dirname)) {
     return;
   }
-  await loadProtosFromFile(filePaths, importPaths, onProtoUploaded);
+
+  fs.mkdirSync(dirname, {
+    recursive: true,
+  });
+}
+
+export function saveProtoTextAsFile(basePath: string, file: WritableFile) {
+  const filePath = path.resolve(basePath, file.filePath);
+
+  if (!fs.existsSync(filePath)) {
+    ensureDirectoryExistence(filePath);
+    fs.writeFileSync(filePath, file.content, 'utf-8');
+  }
+
+  return filePath;
+}
+
+export async function getProtosFromEntitySpec(basePath: string,entitySpec: EntitySpec, placeholderProcessor: CustomPlaceholderProcessor) {
+  try {
+    const { files: files, imports } = await placeholderProcessor.processEntitySpec(entitySpec);
+
+    const pSaveProtoTextAsFile = partial(saveProtoTextAsFile, basePath);
+
+    return {
+      files: files.map(pSaveProtoTextAsFile),
+      imports: imports.map(pSaveProtoTextAsFile),
+    }
+  } catch (err) {
+    console.log('OUTPUT ~ getProtosFromEntitySpec ~ err', err);
+  }
+
+  return null;
 }
 
 /**
  * Upload protofiles from gRPC server reflection
- * @param onProtoUploaded
  * @param host
  */
-export async function importProtosFromServerReflection(onProtoUploaded: OnProtoUpload, host: string) {
-  await loadProtoFromReflection(host, onProtoUploaded);
+export async function importProtosFromServerReflection(host: string) {
+  await loadProtoFromReflection(host);
 }
 
 /**
  * Load protocol buffer files
+ * 
+ * // TODO: add ability to loadProtoFromReflection
+ * @see https://github.com/bloomrpc/bloomrpc/blob/master/app/behaviour/importProtos.ts#L54
+ * 
  * @param filePaths
  * @param importPaths
- * @param onProtoUploaded
  */
-export async function loadProtos(protoPaths: string[], importPaths?: string[], onProtoUploaded?: OnProtoUpload): Promise<ProtoFile[]> {
-  const validateOptions = {
-    require_tld: false,
-    require_protocol: false,
-    require_host: false,
-    require_valid_protocol: false,
-  }
-  const protoUrls = protoPaths.filter((protoPath) => {
-    return isURL(protoPath, validateOptions);
-  })
-
-  const protoFiles = protoPaths.filter((protoPath) => {
-    return !isURL(protoPath, validateOptions);
-  })
-
-  const protoFileFromFiles = await loadProtosFromFile(protoPaths, importPaths, onProtoUploaded);
+export async function loadProtos(basePath: string, protoPaths: string[], importPaths?: string[]): Promise<LoadProtoResult> {
+  const protoFileFromFiles = await loadProtosFromFile(basePath, protoPaths, importPaths);
   return protoFileFromFiles;
-  // let protoFileFromReflection: ProtoFile[] = [];
-  // for (const protoUrl of protoUrls) {
-  //   protoFileFromReflection = protoFileFromReflection.concat(await loadProtoFromReflection(protoUrl, onProtoUploaded));
-  // }
-
-  // return protoFileFromFiles.concat(protoFileFromReflection);
 }
 
 /**
  * Load protocol buffer files from gRPC server reflection
+ * 
+ * // TODO: implement
+ * @see https://github.com/bloomrpc/bloomrpc/blob/master/app/behaviour/importProtos.ts#L84
+ * 
  * @param host
- * @param onProtoUploaded
  */
-export async function loadProtoFromReflection(host: string, onProtoUploaded?: OnProtoUpload): Promise<ProtoFile[]> {
-  try {
-    const reflectionClient = new Client(host, credentials.createInsecure());
-    const services = (await reflectionClient.listServices()) as string[];
-    const serviceRoots = await Promise.all(
-        services
-            .filter(s => s && s !== 'grpc.reflection.v1alpha.ServerReflection')
-            .map((service: string) => reflectionClient.fileContainingSymbol(service))
-    );
-
-    const protos = serviceRoots.map((root) => {
-      return {
-        fileName: root.files[root.files.length - 1],
-        filePath: host,
-        protoText: "proto text not supported in gRPC reflection",
-        ast: loadObject(root, {}),
-        root: root
-      }
-    });
-
-    const protoList = protos.reduce((list: ProtoFile[], proto: Proto) => {
-      // Services with methods
-      // eslint-disable-next-line @typescript-eslint/no-shadow
-      const services = parseServices(proto);
-
-      // Proto file
-      list.push({
-        proto,
-        fileName: proto.fileName,
-        services
-      });
-
-      return list;
-    }, []);
-
-    onProtoUploaded && onProtoUploaded(protoList, undefined);
-    return protoList;
-
-  } catch (e) {
-    console.error(e);
-    onProtoUploaded && onProtoUploaded([], e);
-
-    if (!onProtoUploaded) {
-      throw e;
-    }
-
-    return []
-  }
+export async function loadProtoFromReflection(_host: string): Promise<ProtoFile[]> {
+  throw new NotImplementedError();
 }
 
 /**
  * Load protocol buffer files from proto files
  * @param filePaths
  * @param importPaths
- * @param onProtoUploaded
  */
-export async function loadProtosFromFile(filePaths: string[], importPaths?: string[], onProtoUploaded?: OnProtoUpload): Promise<ProtoFile[]> {
-  try {
-    // const packageDefinition = await load(filePaths);
-    
-    // const packageObject = loadPackageDefinition(packageDefinition);
+export async function loadProtosFromFile(basePath: string, filePaths: string[], importPaths?: string[]): Promise<LoadProtoResult> {
+  const result: LoadProtoResult = {
+    protos: [],
+    missingImports: [],
+    status: LoadProtoStatus.ok,
+  };
 
-    const protos = await Promise.all(filePaths.map((fileName) =>
-      fromFileName(fileName, [
-        ...(importPaths ? importPaths : []),
-        ...commonProtosPath,
-      ])
-    ));
+  const pGetAbsolutePath = partial(getAbsolutePath, basePath);
+  const pGetRelativePath = partial(getRelativePath, basePath);
 
-    const protoList = protos.reduce((list: ProtoFile[], proto: Proto) => {
+  const absoluteFilePaths = (filePaths || []).map(pGetAbsolutePath);
+  const absoluteImportPaths = (importPaths || []).map(pGetAbsolutePath)
 
-      // Services with methods
-      const services = parseServices(proto);
+  const allImports = getAllPossibleSubPaths(
+    basePath,
+    ...absoluteImportPaths,
+    ...absoluteFilePaths,
+  );
 
-      // Proto file
-      list.push({
-        proto,
-        fileName: proto.fileName.split(path.sep).pop() || "",
-        services,
-      });
+  const protos: Proto[] = [];
 
-      return list;
-    }, []);
+  for (const filePath of absoluteFilePaths) {
+    try {
+      const proto = await fromFileName(filePath, allImports);
+      protos.push(proto);
+    } catch (err) {
+      console.log('OUTPUT ~ loadProtosFromFile ~ err', err);
+      if (err.errno === -2) {
+        result.missingImports?.push({
+          filePath: pGetRelativePath(filePath),
+          fileName: path.basename(filePath),
+        });
 
-    // onProtoUploaded && onProtoUploaded(protoList, undefined);
-    return protoList;
-
-  } catch (e) {
-    console.error(e);
-    onProtoUploaded && onProtoUploaded([], e);
-
-    if (!onProtoUploaded) {
-      throw e;
+        result.status = LoadProtoStatus.part;
+      } else {
+        result.status = LoadProtoStatus.fail;
+      }
     }
-
-    return [];
   }
+
+  const relativeImports = uniq((importPaths || []).map(pGetRelativePath));
+
+  const protoList = protos.reduce((list: ProtoFile[], proto: Proto) => {
+    // Hide full filepath
+    proto.filePath = pGetRelativePath(proto.filePath);
+    proto.importPaths = relativeImports;
+
+    // Services with methods
+    const services = parseServices(proto);
+
+    // Proto file
+    list.push({
+      proto,
+      fileName: proto.fileName.split(path.sep).pop() || "",
+      services,
+    });
+
+    return list;
+  }, []);
+
+  result.protos = protoList;
+
+  return result;
 }
 
 /**
@@ -176,36 +166,28 @@ export async function loadProtosFromFile(filePaths: string[], importPaths?: stri
  */
 export function parseServices(proto: Proto) {
 
-  const services: {[key: string]: ProtoService} = {};
+  const services: { [key: string]: ProtoService } = {};
 
   walkServices(proto, (service: Service, _: any, serviceName: string) => {
     const mocks = mockRequestMethods(service);
+
     services[serviceName] = {
       serviceName: serviceName,
       proto,
       methodsMocks: mocks,
       methodsName: Object.keys(mocks),
+      definition: proto.root.lookupService(serviceName),
     };
   });
 
   return services;
 }
 
+/**
+ * // TODO: implement 
+ * @see https://github.com/bloomrpc/bloomrpc/blob/master/app/behaviour/importProtos.ts#L198
+ */
 export function importResolvePath(): Promise<string | null> {
-  return new Promise(async (resolve) => {
-    // const openDialogResult = await remote.dialog.showOpenDialog(remote.getCurrentWindow(), {
-    //   properties: ['openDirectory'],
-    //   filters: []
-    // });
-
-    // const filePaths = openDialogResult.filePaths;
-
-    // if (!filePaths) {
-    //   return reject("No folder selected");
-    // }
-    // resolve(filePaths[0]);
-
-    resolve(null);
-  });
+  throw new NotImplementedError();
 }
 

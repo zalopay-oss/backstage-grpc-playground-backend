@@ -1,8 +1,59 @@
-/* eslint-disable import/no-extraneous-dependencies */
-import { InputError, NotAllowedError } from '@backstage/errors';
+import { InputError } from '@backstage/errors';
 import { z } from 'zod';
 import { Request } from 'express';
 import lodash from 'lodash';
+import path from 'path';
+import { resolvePackagePath } from '@backstage/backend-common';
+
+export const getUploadPath = (entityName: string) =>
+  resolvePackagePath(
+    '@backstage/plugin-bloomrpc-backend',
+    path.join('proto', entityName),
+  );
+
+export enum LoadProtoStatus {
+  ok = 1,
+  fail = -1,
+  part = 0
+}
+
+/**
+ * @author thaotx3
+ * @param paths 
+ * @returns all possible dirname of a path until hit the basepath
+ */
+export function getAllPossibleSubPaths(basePath: string, ...paths: string[]) {
+  const allPaths: Set<string> = new Set();
+
+  paths.forEach(str => {
+    const relativePath = getRelativePath(basePath, str);
+    if (!relativePath || relativePath.startsWith('../')) return;
+
+    let extracted = str;
+    while (extracted !== basePath) {
+      extracted = path.dirname(extracted);
+      allPaths.add(extracted);
+    }
+  });
+
+  return Array.from(allPaths);
+}
+
+/**
+ * Return full path
+ * @param to relative path to the basePath
+ */
+export function resolveRelativePath(basePath: string, to: string) {
+  return path.resolve(basePath, to);
+}
+
+export function getRelativePath(from: string, to: string) {
+  return path.isAbsolute(to) ? path.relative(from, to) : to;
+}
+
+export function getAbsolutePath(from: string, to: string) {
+  return path.isAbsolute(to) ? to : resolveRelativePath(from, to);
+}
 
 export async function requireRequestBody(req: Request): Promise<unknown> {
   const contentType = req.header('content-type');
@@ -49,6 +100,26 @@ export const sendRequestInput = z
     methodName: z.string(),
     serviceName: z.string(),
     url: z.string(),
+    importPaths: z.array(z.string()).optional(),
     interactive: z.boolean(),
   })
   .strict(); // no unknown keys;
+
+export const placeholderFile = z.object({
+  file_name: z.string(),
+  file_path: z.string(),
+  is_preloaded: z.boolean().optional(),
+  import_paths: z.array(z.string()).optional(),
+  url: z.string().optional(),
+});
+
+export const getProtoInput = z
+  .object({
+    entitySpec: z.object({
+      definition: z.string().optional(),
+      files: z.array(placeholderFile),
+      imports: z.array(placeholderFile).optional(),
+      targets: z.unknown(),
+    }),
+  });
+
