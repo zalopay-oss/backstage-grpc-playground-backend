@@ -14,7 +14,8 @@
  * limitations under the License.
  */
 
-import { createServiceBuilder } from '@backstage/backend-common';
+import { createServiceBuilder, loadBackendConfig, UrlReaders } from '@backstage/backend-common';
+import { ScmIntegrations } from '@backstage/integration';
 import { Server } from 'http';
 import { Logger } from 'winston';
 import { createRouter } from './router';
@@ -30,8 +31,13 @@ export async function startStandaloneServer(
 ): Promise<Server> {
   const logger = options.logger.child({ service: 'bloomrpc-backend-backend' });
   logger.debug('Starting application server...');
+  const config = await loadBackendConfig({ logger, argv: process.argv });
+  const integrations = ScmIntegrations.fromConfig(config);
+  const reader = UrlReaders.default({ logger, config });
   const router = await createRouter({
     logger,
+    integrations,
+    reader
   });
 
   let service = createServiceBuilder(module)
