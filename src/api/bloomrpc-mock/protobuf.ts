@@ -43,6 +43,9 @@ export async function fromFileName(protoPath: string, includeDirs?: string[]): P
     );
   }
 
+  // eslint-disable-next-line no-param-reassign
+  includeDirs = uniq(includeDirs);
+
   const packageDefinition = await grpcDef(path.basename(protoPath), {
     keepCase: true,
     longs: String,

@@ -6,9 +6,18 @@ export interface Certificate {
   useServerCertificate?: boolean;
 }
 
-export interface CertFile {
+export interface BaseFile {
   fileName: string;
   filePath: string;
+}
+
+export interface CertFile extends BaseFile {
+  fileName: string;
+  filePath: string;
+}
+
+export interface FileWithImports extends BaseFile {
+  importPaths?: string[];
 }
 
 export interface RawPlaceholderFile {
@@ -20,24 +29,13 @@ export interface RawPlaceholderFile {
   is_library: boolean;
 }
 
-export interface PlaceholderFile {
-  fileName: string;
-  filePath: string;
+export interface PlaceholderFile extends FileWithImports {
   isPreloaded?: boolean;
-  importPaths?: string[];
   url?: string;
   isLibrary?: boolean;
 }
 
-export interface PreloadedFile {
-  fileName: string;
-  filePath: string;
-  importPaths?: string[];
-}
-
-export interface WritableFile {
-  fileName: string;
-  filePath: string;
+export interface WritableFile extends BaseFile {
   content: string;
 }
 
@@ -63,9 +61,4 @@ export interface RawEntitySpec extends BaseEntitySpec {
 export interface EntitySpec extends BaseEntitySpec {
   files: PlaceholderFile[];
   imports?: PlaceholderFile[];
-}
-
-export interface MissingImportFile {
-  fileName: string;
-  filePath: string;
 }

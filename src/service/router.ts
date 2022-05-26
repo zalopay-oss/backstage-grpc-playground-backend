@@ -1,20 +1,19 @@
-import path from 'path';
 import { errorHandler, UrlReader } from '@backstage/backend-common';
 import express from 'express';
 import Router from 'express-promise-router';
 import { Logger } from 'winston';
 import multer from 'multer';
-import { v4 as uuid, v1 as timestamp } from 'uuid';
+import { v4 as uuid } from 'uuid';
 import fs from 'fs';
 import {
   PlaceholderResolver,
 } from '@backstage/plugin-catalog-backend';
-import { partial, uniqBy } from 'lodash';
+import { uniqBy } from 'lodash';
 import { ScmIntegrationRegistry } from '@backstage/integration';
 
 import {
   ProtoService, ProtoInfo, GRPCRequest, GRPCEventType, ResponseMetaInformation,
-  RawPlaceholderFile, PlaceholderFile, PreloadedFile, MissingImportFile,
+  RawPlaceholderFile, PlaceholderFile, FileWithImports, BaseFile,
   RawEntitySpec, EntitySpec, GRPCTarget, LoadProtoResult,
   loadProtos, getProtosFromEntitySpec, ensureDirectoryExistence,
   textPlaceholderResolver, CustomPlaceholderProcessor,
@@ -22,8 +21,8 @@ import {
 
 import {
   LoadProtoStatus, getProtoInput,
-  sendRequestInput, getUploadPath,
-  validateRequestBody, getAbsolutePath
+  sendRequestInput, getProtoUploadPath,
+  validateRequestBody, getAbsolutePath, getFileNameFromPath,
 } from './utils';
 
 export interface RouterOptions {
@@ -70,31 +69,24 @@ export async function createRouter(
     }
 
     const { entity: entityName } = req.params;
-    const UPLOAD_PATH = getUploadPath(entityName);
+    const UPLOAD_PATH = getProtoUploadPath(entityName);
 
     const { entitySpec, preloadedProtos } = mapRawEntitySpec(rawSpec as RawEntitySpec);
 
+    // Stage 1: Load from local storage
     if (preloadedProtos?.length) {
-      const preloadedFullFilePaths: string[] = []
-      const preloadedFullImports: string[] = [];
-
-      preloadedProtos.forEach(preloaded => {
-        preloadedFullFilePaths.push(preloaded.filePath);
-        preloadedFullImports.push(...(preloaded.importPaths || []));
-      });
-
       const {
         protos,
         status,
         missingImports
-      } = await loadProtos(UPLOAD_PATH, preloadedFullFilePaths, preloadedFullImports);
+      } = await loadProtos(UPLOAD_PATH, preloadedProtos);
 
       result.protos.push(...protos);
 
       result.protos.forEach((preloaded) => {
         const index = entitySpec.files.findIndex(p => p.filePath === preloaded.proto.filePath);
         if (index > -1) {
-          // preloaded, no need to get again
+          // preloaded, no need to get again in stage 2
           entitySpec.files.splice(index, 1);
         }
       });
@@ -108,29 +100,50 @@ export async function createRouter(
       }
     }
 
-    // handle with placeholder
+    // Stage 2: handle with placeholder
     if (entitySpec?.files.length) {
       const getProtoData = await getProtosFromEntitySpec(UPLOAD_PATH, entitySpec, placeholderProcessor);
 
       if (getProtoData) {
         const { files: protoFiles, imports } = getProtoData;
-        const allImportPaths = [protoFiles, imports].flat();
+
+        const filesToLoad: FileWithImports[] = protoFiles.map(f => ({
+          ...f,
+          importPaths: imports.map(imp => imp.filePath),
+        }))
 
         const {
           protos: files,
           missingImports,
           status,
-        } = await loadProtos(UPLOAD_PATH, protoFiles, allImportPaths);
+        } = await loadProtos(UPLOAD_PATH, filesToLoad);
 
-        if (missingImports?.length) {
-          result.missingImports!.push(...missingImports);
-        }
-
+        // Unify result from two stages
         if (status !== undefined) {
-          result.status = status;
-        }
+          if (status === LoadProtoStatus.ok) {
+            if (result.status === LoadProtoStatus.part) {
+              // we filter out missing that has been resolved in stage 2
+              result.missingImports = result.missingImports?.filter(missing => {
+                return !result.protos.find(protoFile => protoFile.proto.filePath === missing.filePath);
+              })
 
-        result.protos.push(...files);
+              if (!result.missingImports?.length) {
+                // All missing has been resolved on stage 2, we set to ok
+                result.status = LoadProtoStatus.ok;
+              }
+            }
+          } else {
+            // Load with stage 2 is more important
+            result.status = status; // part or fail
+
+            // Add missing to the final result
+            if (missingImports?.length) {
+              result.missingImports!.push(...missingImports);
+            }
+          }
+
+          result.protos.push(...files);
+        }
       }
     }
 
@@ -141,7 +154,7 @@ export async function createRouter(
 
   router.post('/upload-proto/:entity', async (req, res) => {
     const { entity: entityName } = req.params;
-    const UPLOAD_PATH = getUploadPath(entityName);
+    const UPLOAD_PATH = getProtoUploadPath(entityName);
 
     const storage = multer.diskStorage({
       destination: function (_req, _file, callback) {
@@ -157,8 +170,8 @@ export async function createRouter(
       filename: function (_req, file, callback) {
         const fileName = file.originalname;
 
+        // handle duplication
         // if (fs.existsSync(resolveRelativePath(file.originalname))) {
-        //   // handle duplication
         //   const { ext, name } = path.parse(file.originalname);
         //   fileName = `${name}-${timestamp()}${ext}`;
         // }
@@ -171,7 +184,7 @@ export async function createRouter(
 
     upload.array('files[]', 10)(req, res, async () => {
       if (req.files?.length) {
-        const filePaths: string[] = [];
+        let filesWithImports: FileWithImports[] = [];
 
         const files = req.files as Express.Multer.File[];
 
@@ -186,7 +199,11 @@ export async function createRouter(
                 const newFilePath = getAbsolutePath(UPLOAD_PATH, fileMappings[file.filename]);
                 ensureDirectoryExistence(newFilePath);
                 fs.renameSync(file.path, newFilePath);
-                filePaths.push(newFilePath);
+
+                filesWithImports.push({
+                  fileName: file.filename,
+                  filePath: newFilePath,
+                });
 
                 return;
               }
@@ -196,19 +213,19 @@ export async function createRouter(
             }
           }
 
-          filePaths.push(file.path);
+          filesWithImports.push({
+            fileName: file.filename,
+            filePath: file.path,
+          });
         });
 
-        let importFor: MissingImportFile;
-
-        let protoFilePaths = filePaths;
-        let importPaths: string[] = [];
+        let importFor: BaseFile;
 
         if (req.body.importFor) {
           try {
+            // uplaod files are the imports
             importFor = JSON.parse(req.body.importFor);
-            protoFilePaths = [importFor.filePath];
-            importPaths = filePaths;
+            filesWithImports = [{ ...importFor, importPaths: filesWithImports.map(f => f.filePath) }];
           } catch (err) {
             // Invalid import for
             res.send({
@@ -218,10 +235,8 @@ export async function createRouter(
           }
         }
 
-        const loadProtoResult = await loadProtos(UPLOAD_PATH, protoFilePaths, importPaths);
-
+        const loadProtoResult = await loadProtos(UPLOAD_PATH, filesWithImports);
         res.send(loadProtoResult);
-
         return;
       }
 
@@ -230,14 +245,13 @@ export async function createRouter(
         message: 'Empty files',
       });
     })
-
   })
 
   router.post('/send-request/:entity', async (req, res) => {
     const clientRequest = await validateRequestBody(req, sendRequestInput);
     const { entity: entityName } = req.params;
 
-    const UPLOAD_PATH = getUploadPath(entityName);
+    const UPLOAD_PATH = getProtoUploadPath(entityName);
 
     const {
       proto: protoPath,
@@ -249,7 +263,13 @@ export async function createRouter(
       interactive
     } = clientRequest;
 
-    const { protos: protofiles } = await loadProtos(UPLOAD_PATH, [protoPath], importPaths);
+    const filesWithImports = [{
+      fileName: getFileNameFromPath(protoPath),
+      filePath: protoPath,
+      importPaths
+    }]
+
+    const { protos: protofiles } = await loadProtos(UPLOAD_PATH, filesWithImports);
 
     const services = protofiles[0].services;
 
@@ -342,7 +362,7 @@ function mapRawEntitySpec(rawSpec: RawEntitySpec) {
   const rawDefinition = rawSpec.files;
 
   let toGet: PlaceholderFile[] = [];
-  let preloadedProtos: PreloadedFile[] = [];
+  let preloadedProtos: FileWithImports[] = [];
 
   [rawDefinition].flat().forEach(d => {
     if (d.url) {

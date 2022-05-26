@@ -5,7 +5,7 @@ import lodash from 'lodash';
 import path from 'path';
 import { resolvePackagePath } from '@backstage/backend-common';
 
-export const getUploadPath = (entityName: string) =>
+export const getProtoUploadPath = (entityName: string) =>
   resolvePackagePath(
     '@backstage/plugin-bloomrpc-backend',
     path.join('proto', entityName),
@@ -15,6 +15,10 @@ export enum LoadProtoStatus {
   ok = 1,
   fail = -1,
   part = 0
+}
+
+export function getFileNameFromPath(p: string) {
+  return path.basename(p);
 }
 
 /**
