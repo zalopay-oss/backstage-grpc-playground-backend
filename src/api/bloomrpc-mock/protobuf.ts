@@ -5,7 +5,8 @@ import path from 'path';
 import {
   Enum,
   Field,
-  MapField, Method,
+  MapField,
+  Method,
   Namespace,
   OneOf,
   ReflectionObject,
@@ -15,13 +16,14 @@ import {
   Type,
 } from 'protobufjs';
 
+import { PlaceholderFile } from '../types';
 import { load as grpcDef } from '@grpc/proto-loader';
 
 export interface Proto {
   fileName: string;
   filePath: string;
   protoText: string;
-  importPaths?: string[];
+  imports?: PlaceholderFile[];
   ast: GrpcObject;
   root: Root;
 }
@@ -29,18 +31,17 @@ export interface Proto {
 /**
  * Proto ast from filename
  */
-export async function fromFileName(protoPath: string, includeDirs?: string[]): Promise<Proto> {
+export async function fromFileName(
+  protoPath: string,
+  includeDirs?: string[],
+): Promise<Proto> {
   // eslint-disable-next-line no-param-reassign
   includeDirs = includeDirs ? [...includeDirs] : [];
 
   if (path.isAbsolute(protoPath)) {
-    includeDirs.push(
-      path.dirname(protoPath)
-    );
+    includeDirs.push(path.dirname(protoPath));
   } else {
-    includeDirs.push(
-      path.dirname(path.join(process.cwd(), protoPath))
-    );
+    includeDirs.push(path.dirname(path.join(process.cwd(), protoPath)));
   }
 
   // eslint-disable-next-line no-param-reassign
@@ -63,12 +64,9 @@ export async function fromFileName(protoPath: string, includeDirs?: string[]): P
     addIncludePathToRoot(protoRoot, includeDirs);
   }
 
-  const root = await protoRoot.load(
-    protoPath,
-    {
-      keepCase: true,
-    }
-  );
+  const root = await protoRoot.load(protoPath, {
+    keepCase: true,
+  });
 
   const protoText = await promisifyRead(protoPath);
 
@@ -84,44 +82,60 @@ export async function fromFileName(protoPath: string, includeDirs?: string[]): P
 /**
  * Walk through services
  */
-export function walkServices(proto: Proto, onService: (service: Service, def: any, serviceName: string) => void) {
+export function walkServices(
+  proto: Proto,
+  onService: (service: Service, def: any, serviceName: string) => void,
+) {
   const { ast, root } = proto;
 
   walkNamespace(root, namespace => {
     const nestedNamespaceTypes = namespace.nested;
     if (nestedNamespaceTypes) {
       Object.keys(nestedNamespaceTypes).forEach(nestedTypeName => {
-        const fullNamespaceName = (namespace.fullName.startsWith('.'))
+        const fullNamespaceName = namespace.fullName.startsWith('.')
           ? namespace.fullName.replace('.', '')
           : namespace.fullName;
 
-        const nestedType = root.lookup(`${fullNamespaceName}.${nestedTypeName}`);
+        const nestedType = root.lookup(
+          `${fullNamespaceName}.${nestedTypeName}`,
+        );
 
         if (nestedType instanceof Service) {
           const serviceName = [
             ...fullNamespaceName.split('.'),
-            nestedType.name
+            nestedType.name,
           ];
 
           const fullyQualifiedServiceName = serviceName.join('.');
 
-          onService(nestedType as Service, get(ast, serviceName), fullyQualifiedServiceName);
+          onService(
+            nestedType as Service,
+            get(ast, serviceName),
+            fullyQualifiedServiceName,
+          );
         }
       });
     }
   });
 
-  Object.keys(ast)
-    .forEach(serviceName => {
-      const lookupType = root.lookup(serviceName);
-      if (lookupType instanceof Service) {
-        // No namespace, root services
-        onService(serviceByName(root, serviceName), ast[serviceName], serviceName);
-      }
-    });
+  Object.keys(ast).forEach(serviceName => {
+    const lookupType = root.lookup(serviceName);
+    if (lookupType instanceof Service) {
+      // No namespace, root services
+      onService(
+        serviceByName(root, serviceName),
+        ast[serviceName],
+        serviceName,
+      );
+    }
+  });
 }
 
-export function walkNamespace(root: Root, onNamespace: (namespace: Namespace) => void, parentNamespace?: Namespace) {
+export function walkNamespace(
+  root: Root,
+  onNamespace: (namespace: Namespace) => void,
+  parentNamespace?: Namespace,
+) {
   const namespace = parentNamespace ? parentNamespace : root;
   const nestedType = namespace.nested;
 
@@ -178,7 +192,7 @@ function addIncludePathToRoot(root: Root, includePaths: string[]) {
 
 function isNamespace(lookupType: ReflectionObject) {
   if (
-    (lookupType instanceof Namespace) &&
+    lookupType instanceof Namespace &&
     !(lookupType instanceof Service) &&
     !(lookupType instanceof Type) &&
     !(lookupType instanceof Enum) &&

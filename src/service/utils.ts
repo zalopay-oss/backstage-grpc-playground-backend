@@ -14,7 +14,7 @@ export const getProtoUploadPath = (entityName: string) =>
 export enum LoadProtoStatus {
   ok = 1,
   fail = -1,
-  part = 0
+  part = 0,
 }
 
 export function getFileNameFromPath(p: string) {
@@ -23,7 +23,7 @@ export function getFileNameFromPath(p: string) {
 
 /**
  * @author thaotx3
- * @param paths 
+ * @param paths
  * @returns all possible dirname of a path until hit the basepath
  */
 export function getAllPossibleSubPaths(basePath: string, ...paths: string[]) {
@@ -92,38 +92,44 @@ export async function validateRequestBody<T>(
   }
 }
 
+export const placeholderFile = (() => {
+  const baseFile = {
+    fileName: z.string(),
+    filePath: z.string(),
+    isPreloaded: z.boolean().optional(),
+    url: z.string().optional(),
+  };
+
+  return z.object({
+    ...baseFile,
+    imports: z.array(z.object(baseFile)).optional(),
+  });
+})();
+
 export const sendRequestInput = z
   .object({
     requestId: z.string(),
-    requestData: z.object({
-      inputs: z.record(z.any()),
-      metadata: z.record(z.string()),
-      stream: z.any(),
-    }).required(),
+    requestData: z
+      .object({
+        inputs: z.record(z.any()),
+        metadata: z.record(z.string()),
+        stream: z.any(),
+      })
+      .required(),
     proto: z.string(),
     methodName: z.string(),
     serviceName: z.string(),
     url: z.string(),
-    importPaths: z.array(z.string()).optional(),
+    imports: z.array(placeholderFile).optional(),
     interactive: z.boolean(),
   })
   .strict(); // no unknown keys;
 
-export const placeholderFile = z.object({
-  file_name: z.string(),
-  file_path: z.string(),
-  is_preloaded: z.boolean().optional(),
-  import_paths: z.array(z.string()).optional(),
-  url: z.string().optional(),
+export const getProtoInput = z.object({
+  entitySpec: z.object({
+    definition: z.string().optional(),
+    files: z.array(placeholderFile),
+    imports: z.array(placeholderFile).optional(),
+    targets: z.unknown(),
+  }),
 });
-
-export const getProtoInput = z
-  .object({
-    entitySpec: z.object({
-      definition: z.string().optional(),
-      files: z.array(placeholderFile),
-      imports: z.array(placeholderFile).optional(),
-      targets: z.unknown(),
-    }),
-  });
-

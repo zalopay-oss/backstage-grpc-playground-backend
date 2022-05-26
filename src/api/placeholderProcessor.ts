@@ -1,10 +1,13 @@
-import { LocationSpec, PlaceholderProcessorOptions, PlaceholderResolverParams } from "@backstage/plugin-catalog-backend";
-import { JsonValue } from "@backstage/types";
+import {
+  PlaceholderProcessorOptions,
+  PlaceholderResolverParams,
+} from '@backstage/plugin-catalog-backend';
+import { JsonValue } from '@backstage/types';
 import yaml from 'yaml';
-import { EntitySpec, PlaceholderFile, WritableFile } from "./types";
+import { EntitySpec, PlaceholderFile, WritableFile } from './types';
 
 export class CustomPlaceholderProcessor {
-  constructor(private readonly options: PlaceholderProcessorOptions) { }
+  constructor(private readonly options: PlaceholderProcessorOptions) {}
 
   async processEntitySpec(
     entitySpec: EntitySpec,
@@ -26,36 +29,54 @@ export class CustomPlaceholderProcessor {
         base,
       });
 
-    const placeholderToFile = async (placeholder: PlaceholderFile): Promise<WritableFile> => {
+    const placeholderToFile = async (
+      placeholder: PlaceholderFile,
+    ): Promise<WritableFile> => {
       const resolverKey = 'text';
-      const resolverValue = placeholder.url!;
+      const resolverValue = placeholder.url;
+      let content: string | undefined;
 
-      const resolver = this.options.resolvers[resolverKey];
+      if (resolverValue) {
+        const resolver = this.options.resolvers[resolverKey];
 
-      const content = await resolver({
-        key: resolverKey,
-        value: resolverValue,
-        baseUrl: '',
-        read,
-        resolveUrl,
-      }) as string;
+        content = (await resolver({
+          key: resolverKey,
+          value: resolverValue,
+          baseUrl: '',
+          read,
+          resolveUrl,
+        })) as string;
+      }
+
+      let resolvedImports: WritableFile[] | undefined;
+
+      if (placeholder.imports) {
+        resolvedImports = await Promise.all(
+          placeholder.imports.map(placeholderToFile),
+        );
+      }
 
       return {
         fileName: placeholder.fileName,
         filePath: placeholder.filePath,
         content,
-      }
-    }
+        url: placeholder.url,
+        imports: resolvedImports,
+      };
+    };
 
-    const resolveFiles = Promise.all([files].flat().map(placeholderToFile));
+    const resolveFiles = Promise.all(files.map(placeholderToFile));
     const resolveImports = Promise.all((imports || []).map(placeholderToFile));
 
-    const [resolvedFiles, resolvedImports] = await Promise.all([resolveFiles, resolveImports]);
+    const [resolvedFiles, resolvedImports] = await Promise.all([
+      resolveFiles,
+      resolveImports,
+    ]);
 
     return {
       files: resolvedFiles,
-      imports: resolvedImports
-    }
+      imports: resolvedImports,
+    };
   }
 }
 

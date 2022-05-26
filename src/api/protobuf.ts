@@ -1,21 +1,21 @@
 import { Proto, ServiceMethodsPayload } from './bloomrpc-mock';
 import { Service } from 'protobufjs';
+import { PlaceholderFile } from './types';
 
 export interface ProtoFile {
   proto: Proto;
   fileName: string;
-  importPaths?: string[];
   services: ProtoServiceList;
 }
 
 export interface ProtoServiceList {
-  [key: string]: ProtoService,
+  [key: string]: ProtoService;
 }
 
 export interface ProtoService {
-  proto: Proto,
-  serviceName: string,
-  methodsMocks: ServiceMethodsPayload,
-  methodsName: string[],
+  proto: Proto;
+  serviceName: string;
+  methodsMocks: ServiceMethodsPayload;
+  methodsName: string[];
   definition: Service;
 }

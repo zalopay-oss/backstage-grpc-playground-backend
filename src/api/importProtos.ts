@@ -1,14 +1,30 @@
 import path from 'path';
 import fs from 'fs';
-import { partial, uniq } from 'lodash';
+import { partial, uniqBy } from 'lodash';
 import { Service } from 'protobufjs';
 
-import { fromFileName, mockRequestMethods, Proto, walkServices } from './bloomrpc-mock';
-import { BaseFile, EntitySpec, FileWithImports, WritableFile } from './types';
+import {
+  fromFileName,
+  mockRequestMethods,
+  Proto,
+  walkServices,
+} from './bloomrpc-mock';
+import {
+  EntitySpec,
+  FileWithImports,
+  PlaceholderFile,
+  WritableFile,
+} from './types';
 import { ProtoFile, ProtoService } from './protobuf';
 import { CustomPlaceholderProcessor } from './placeholderProcessor';
 import { NotImplementedError } from './error';
-import { getAllPossibleSubPaths, LoadProtoStatus, getRelativePath, getAbsolutePath, getFileNameFromPath } from '../service/utils';
+import {
+  getAllPossibleSubPaths,
+  LoadProtoStatus,
+  getRelativePath,
+  getAbsolutePath,
+  getFileNameFromPath,
+} from '../service/utils';
 
 export type LoadProtoResult = {
   protos: ProtoFile[];
@@ -28,30 +44,43 @@ export function ensureDirectoryExistence(filePath: string) {
   });
 }
 
-export function saveProtoTextAsFile(basePath: string, file: WritableFile): BaseFile {
+export function saveProtoTextAsFile(
+  basePath: string,
+  file: WritableFile,
+): PlaceholderFile {
   const filePath = path.resolve(basePath, file.filePath);
 
   if (!fs.existsSync(filePath)) {
     ensureDirectoryExistence(filePath);
-    fs.writeFileSync(filePath, file.content, 'utf-8');
+
+    if (file.content) {
+      fs.writeFileSync(filePath, file.content, 'utf-8');
+    }
   }
 
   return {
     fileName: file.fileName,
     filePath: file.filePath,
+    url: file.url,
+    imports: file.imports?.map(imp => saveProtoTextAsFile(basePath, imp)),
   };
 }
 
-export async function getProtosFromEntitySpec(basePath: string, entitySpec: EntitySpec, placeholderProcessor: CustomPlaceholderProcessor) {
+export async function getProtosFromEntitySpec(
+  basePath: string,
+  entitySpec: EntitySpec,
+  placeholderProcessor: CustomPlaceholderProcessor,
+) {
   try {
-    const { files: files, imports } = await placeholderProcessor.processEntitySpec(entitySpec);
+    const { files: files, imports } =
+      await placeholderProcessor.processEntitySpec(entitySpec);
 
     const pSaveProtoTextAsFile = partial(saveProtoTextAsFile, basePath);
 
     return {
       files: files.map(pSaveProtoTextAsFile),
       imports: imports.map(pSaveProtoTextAsFile),
-    }
+    };
   } catch (err) {
     console.log('OUTPUT ~ getProtosFromEntitySpec ~ err', err);
   }
@@ -69,37 +98,42 @@ export async function importProtosFromServerReflection(host: string) {
 
 /**
  * Load protocol buffer files
- * 
+ *
  * // TODO: add ability to loadProtoFromReflection
  * @see https://github.com/bloomrpc/bloomrpc/blob/master/app/behaviour/importProtos.ts#L54
- * 
- * @param filePaths
- * @param importPaths
+ *
+ * @param protoFiles
  */
-export async function loadProtos(basePath: string, protoFiles: FileWithImports[]): Promise<LoadProtoResult> {
-  // const protoFileFromFiles = await loadProtosFromFile(basePath, protoPaths, importPaths);
+export async function loadProtos(
+  basePath: string,
+  protoFiles: FileWithImports[],
+): Promise<LoadProtoResult> {
   const protoFileFromFiles = await loadProtosFromFile(basePath, protoFiles);
   return protoFileFromFiles;
 }
 
 /**
  * Load protocol buffer files from gRPC server reflection
- * 
+ *
  * // TODO: implement
  * @see https://github.com/bloomrpc/bloomrpc/blob/master/app/behaviour/importProtos.ts#L84
- * 
+ *
  * @param host
  */
-export async function loadProtoFromReflection(_host: string): Promise<ProtoFile[]> {
+export async function loadProtoFromReflection(
+  _host: string,
+): Promise<ProtoFile[]> {
   throw new NotImplementedError();
 }
 
 /**
  * Load protocol buffer files from proto files
- * @param filePaths
- * @param importPaths
+ * @param protoFiles
  */
-export async function loadProtosFromFile(basePath: string, protoFiles: FileWithImports[]): Promise<LoadProtoResult> {
+export async function loadProtosFromFile(
+  basePath: string,
+  protoFiles: FileWithImports[],
+): Promise<LoadProtoResult> {
   const result: LoadProtoResult = {
     protos: [],
     missingImports: [],
@@ -112,9 +146,11 @@ export async function loadProtosFromFile(basePath: string, protoFiles: FileWithI
   const protos: Proto[] = [];
 
   for (const protoFile of protoFiles) {
-    const { filePath, importPaths } = protoFile;
+    const { filePath, imports } = protoFile;
     const absoluteFilePath = pGetAbsolutePath(filePath);
-    const absoluteImportPaths = (importPaths || []).map(pGetAbsolutePath)
+    const absoluteImportPaths = (imports || [])
+      .map(p => p.filePath)
+      .map(pGetAbsolutePath);
 
     try {
       const allImports = getAllPossibleSubPaths(
@@ -122,27 +158,41 @@ export async function loadProtosFromFile(basePath: string, protoFiles: FileWithI
         absoluteFilePath,
         ...absoluteImportPaths,
       );
-
       const proto = await fromFileName(absoluteFilePath, allImports);
 
       // Hide full filepath
+      const relativeImports = uniqBy(
+        (imports || []).map(f => ({
+          ...f,
+          filePath: pGetRelativePath(f.filePath),
+        })),
+        'filePath',
+      );
+
       proto.filePath = pGetRelativePath(proto.filePath);
-      const relativeImports = uniq((importPaths || []).map(pGetRelativePath));
-      proto.importPaths = relativeImports;
+      proto.imports = relativeImports;
       protos.push(proto);
     } catch (err) {
       console.log('OUTPUT ~ loadProtosFromFile ~ err', err);
       if (err.errno === -2) {
-        const missingImports: string[] = []
+        const allImports = imports;
+        const missingImports: PlaceholderFile[] = [];
 
         if (err.path) {
-          missingImports.push(path.relative(path.dirname(absoluteFilePath), pGetAbsolutePath(err.path)));
+          missingImports.push({
+            filePath: path.relative(
+              path.dirname(absoluteFilePath),
+              pGetAbsolutePath(err.path),
+            ),
+            fileName: getFileNameFromPath(err.path),
+          });
         }
 
         result.missingImports?.push({
           filePath: pGetRelativePath(filePath),
           fileName: getFileNameFromPath(filePath),
-          importPaths: missingImports,
+          missing: missingImports,
+          imports: allImports,
         });
 
         result.status = LoadProtoStatus.part;
@@ -159,7 +209,7 @@ export async function loadProtosFromFile(basePath: string, protoFiles: FileWithI
     // Proto file
     list.push({
       proto,
-      fileName: proto.fileName.split(path.sep).pop() || "",
+      fileName: proto.fileName.split(path.sep).pop() || '',
       services,
     });
 
@@ -176,7 +226,6 @@ export async function loadProtosFromFile(basePath: string, protoFiles: FileWithI
  * @param proto
  */
 export function parseServices(proto: Proto) {
-
   const services: { [key: string]: ProtoService } = {};
 
   walkServices(proto, (service: Service, _: any, serviceName: string) => {
@@ -195,10 +244,9 @@ export function parseServices(proto: Proto) {
 }
 
 /**
- * // TODO: implement 
+ * // TODO: implement
  * @see https://github.com/bloomrpc/bloomrpc/blob/master/app/behaviour/importProtos.ts#L198
  */
 export function importResolvePath(): Promise<string | null> {
   throw new NotImplementedError();
 }
-

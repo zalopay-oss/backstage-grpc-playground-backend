@@ -11,32 +11,21 @@ export interface BaseFile {
   filePath: string;
 }
 
-export interface CertFile extends BaseFile {
-  fileName: string;
-  filePath: string;
-}
+export interface CertFile extends BaseFile {}
 
 export interface FileWithImports extends BaseFile {
-  importPaths?: string[];
-}
-
-export interface RawPlaceholderFile {
-  file_name: string;
-  file_path: string;
-  is_preloaded?: boolean;
-  import_paths?: string[];
-  url?: string;
-  is_library: boolean;
+  imports?: PlaceholderFile[];
+  missing?: PlaceholderFile[];
 }
 
 export interface PlaceholderFile extends FileWithImports {
   isPreloaded?: boolean;
   url?: string;
-  isLibrary?: boolean;
 }
 
-export interface WritableFile extends BaseFile {
-  content: string;
+export interface WritableFile extends PlaceholderFile {
+  content?: string;
+  imports?: WritableFile[];
 }
 
 export interface GRPCTarget {
@@ -50,12 +39,6 @@ export interface GRPCTargetInfo {
 
 export interface BaseEntitySpec {
   targets: GRPCTarget;
-}
-
-export interface RawEntitySpec extends BaseEntitySpec {
-  definition: string;
-  files: RawPlaceholderFile[];
-  imports?: RawPlaceholderFile[];
 }
 
 export interface EntitySpec extends BaseEntitySpec {
