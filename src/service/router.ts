@@ -21,6 +21,7 @@ import {
   GRPCTarget,
   LoadProtoResult,
   loadProtos,
+  ProtoFile,
   getProtosFromEntitySpec,
   ensureDirectoryExistence,
   textPlaceholderResolver,
@@ -130,6 +131,27 @@ export async function createRouter(
           imports: commonImports.concat((f.imports || []).flat()),
         }));
 
+        if (result.missingImports?.length) {
+          // allFiles are files, their imports and commonImports
+          const resolvedFiles = new Map<string, PlaceholderFile>();
+
+          protoFiles
+            .concat(commonImports)
+            .concat(
+              protoFiles.reduce((acc: PlaceholderFile[], file) => {
+                return acc.concat(file.imports || []);
+              }, []),
+            )
+            .forEach(f => {
+              resolvedFiles.set(f.filePath, f);
+            });
+
+          // filter out missing files that are already loaded
+          result.missingImports = result.missingImports.filter(missing => {
+            return !resolvedFiles.has(missing.filePath);
+          });
+        }
+
         const {
           protos: files,
           missingImports,
@@ -138,36 +160,82 @@ export async function createRouter(
 
         // Unify result from two stages
         if (status !== undefined) {
-          if (status === LoadProtoStatus.ok) {
-            if (result.status === LoadProtoStatus.part) {
-              // we filter out missing that has been resolved in stage 2
-              result.missingImports = result.missingImports?.filter(missing => {
-                return !files.find(
-                  protoFile => protoFile.proto.filePath === missing.filePath,
+          switch (status) {
+            case LoadProtoStatus.ok:
+              if (result.status === LoadProtoStatus.part) {
+                const resolvedFiles = new Map<string, ProtoFile>();
+                files.forEach(f => {
+                  resolvedFiles.set(f.proto.filePath, f);
+                });
+
+                // we filter out missing that has been resolved in stage 2
+                result.missingImports = result.missingImports?.filter(
+                  missing => {
+                    return !resolvedFiles.has(missing.filePath);
+                  },
                 );
-              });
 
-              if (!result.missingImports?.length) {
-                // All missing has been resolved on stage 2, we set to ok
-                result.status = LoadProtoStatus.ok;
+                if (!result.missingImports?.length) {
+                  // All missing has been resolved on stage 2, we set to ok
+                  result.status = LoadProtoStatus.ok;
+                }
               }
-            }
-          } else {
-            // Load with stage 2 is more important
-            result.status = status; // part or fail
+              break;
 
-            // Add missing to the final result
-            if (missingImports?.length) {
-              result.missingImports!.push(...missingImports);
-            }
+            case LoadProtoStatus.part:
+              // Add missing to the final result
+              if (missingImports?.length) {
+                result.missingImports = result.missingImports || [];
+
+                // Construct a map of missing files
+                const missingMap = new Map<string, PlaceholderFile>();
+                result.missingImports.forEach(missing => {
+                  missingMap.set(missing.filePath, missing);
+                });
+
+                missingImports.forEach(missing => {
+                  if (missingMap.has(missing.filePath)) {
+                    // if missing file is already in the map, we merge the imports
+                    const current = missingMap.get(missing.filePath)!;
+
+                    current.imports = current.imports || [];
+
+                    if (missing.imports?.length) {
+                      // construct another map to avoid duplicated imports
+                      const importsMap = new Map<string, PlaceholderFile>();
+                      current.imports.forEach(imp => {
+                        importsMap.set(imp.filePath, imp);
+                      });
+
+                      missing.imports.forEach(imp => {
+                        if (!importsMap.has(imp.filePath)) {
+                          current.imports!.push(imp);
+                        }
+                      });
+                      missingMap.set(missing.filePath, current);
+                    }
+                  } else {
+                    missingMap.set(missing.filePath, missing);
+                  }
+                });
+
+                result.missingImports = Array.from(missingMap.values());
+              }
+
+              result.status = status;
+              break;
+
+            default:
+              result.status = status;
+              break;
           }
+        }
 
+        if (files?.length) {
           result.protos.push(...files);
         }
       }
     }
-
-    result.missingImports = uniqBy(result.missingImports!, 'filePath');
 
     res.send(result);
   });
@@ -298,10 +366,14 @@ export async function createRouter(
       },
     ];
 
-    const { protos: protofiles } = await loadProtos(
-      UPLOAD_PATH,
-      filesWithImports,
-    );
+    const loadProtoResult = await loadProtos(UPLOAD_PATH, filesWithImports);
+
+    if (loadProtoResult.status !== LoadProtoStatus.ok) {
+      res.status(400).json(loadProtoResult);
+      return;
+    }
+
+    const { protos: protofiles } = loadProtoResult;
 
     const services = protofiles[0].services;
 

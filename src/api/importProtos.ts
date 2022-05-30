@@ -145,12 +145,34 @@ export async function loadProtosFromFile(
 
   const protos: Proto[] = [];
 
+  // Handle missing imports
+  let capturedFromWarning: string | undefined;
+  const missingMap = new Map<string, FileWithImports>();
+
+  function handleWarning(warning: Error) {
+    const match = warning?.message?.match?.(
+      /(.+\.proto) not found in any of the include paths/,
+    );
+    capturedFromWarning = match?.[1] || '';
+  }
+
+  process.on('warning', handleWarning);
+
   for (const protoFile of protoFiles) {
     const { filePath, imports } = protoFile;
     const absoluteFilePath = pGetAbsolutePath(filePath);
     const absoluteImportPaths = (imports || [])
       .map(p => p.filePath)
       .map(pGetAbsolutePath);
+
+    // Hide full filepath
+    const relativeImports = uniqBy(
+      (imports || []).map(f => ({
+        ...f,
+        filePath: pGetRelativePath(f.filePath),
+      })),
+      'filePath',
+    );
 
     try {
       const allImports = getAllPossibleSubPaths(
@@ -160,47 +182,54 @@ export async function loadProtosFromFile(
       );
       const proto = await fromFileName(absoluteFilePath, allImports);
 
-      // Hide full filepath
-      const relativeImports = uniqBy(
-        (imports || []).map(f => ({
-          ...f,
-          filePath: pGetRelativePath(f.filePath),
-        })),
-        'filePath',
-      );
-
       proto.filePath = pGetRelativePath(proto.filePath);
       proto.imports = relativeImports;
       protos.push(proto);
     } catch (err) {
       console.log('OUTPUT ~ loadProtosFromFile ~ err', err);
       if (err.errno === -2) {
-        const allImports = imports;
         const missingImports: PlaceholderFile[] = [];
+        const capturedMissing = capturedFromWarning || err.path;
 
-        if (err.path) {
+        if (capturedMissing) {
           missingImports.push({
-            filePath: path.relative(
-              path.dirname(absoluteFilePath),
-              pGetAbsolutePath(err.path),
-            ),
-            fileName: getFileNameFromPath(err.path),
+            filePath: pGetRelativePath(capturedMissing),
+            fileName: getFileNameFromPath(capturedMissing),
           });
         }
 
-        result.missingImports?.push({
-          filePath: pGetRelativePath(filePath),
-          fileName: getFileNameFromPath(filePath),
-          missing: missingImports,
-          imports: allImports,
-        });
+        const relativeFilePath = pGetRelativePath(filePath);
+
+        if (!missingMap.has(relativeFilePath)) {
+          missingMap.set(relativeFilePath, {
+            filePath: relativeFilePath,
+            fileName: getFileNameFromPath(filePath),
+            missing: missingImports,
+            imports: relativeImports,
+          });
+        } else {
+          const current = missingMap.get(relativeFilePath)!;
+          const newImports = uniqBy(
+            (current.imports || []).concat(relativeImports || []),
+            'filePath',
+          );
+
+          missingMap.set(relativeFilePath, {
+            ...current,
+            imports: newImports,
+          });
+        }
 
         result.status = LoadProtoStatus.part;
       } else {
         result.status = LoadProtoStatus.fail;
       }
     }
+
+    result.missingImports = Array.from(missingMap.values());
   }
+
+  process.off('warning', handleWarning);
 
   const protoList = protos.reduce((list: ProtoFile[], proto: Proto) => {
     // Services with methods

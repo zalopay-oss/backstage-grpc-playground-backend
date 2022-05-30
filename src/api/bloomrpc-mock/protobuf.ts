@@ -47,7 +47,7 @@ export async function fromFileName(
   // eslint-disable-next-line no-param-reassign
   includeDirs = uniq(includeDirs);
 
-  const packageDefinition = await grpcDef(path.basename(protoPath), {
+  const packageDefinition = await grpcDef(protoPath, {
     keepCase: true,
     longs: String,
     enums: String,
