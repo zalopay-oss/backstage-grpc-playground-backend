@@ -122,6 +122,7 @@ export const sendRequestInput = z
     url: z.string(),
     imports: z.array(placeholderFile).optional(),
     interactive: z.boolean(),
+    proxy: z.string().optional(),
   })
   .strict(); // no unknown keys;
 

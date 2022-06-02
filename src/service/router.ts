@@ -356,6 +356,7 @@ export async function createRouter(
       url,
       requestData,
       interactive,
+      proxy,
     } = clientRequest;
 
     const filesWithImports: FileWithImports[] = [
@@ -376,6 +377,14 @@ export async function createRouter(
     const { protos: protofiles } = loadProtoResult;
 
     const services = protofiles[0].services;
+
+    if (!proxy) {
+      process.env.http_proxy = undefined;
+      process.env.https_proxy = undefined;
+    } else {
+      process.env.http_proxy = proxy;
+      process.env.https_proxy = proxy;
+    }
 
     const service: ProtoService = services[serviceName];
     const protoInfo = new ProtoInfo(service, methodName);
