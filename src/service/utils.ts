@@ -3,13 +3,10 @@ import { z } from 'zod';
 import { Request } from 'express';
 import lodash from 'lodash';
 import path from 'path';
-import { resolvePackagePath } from '@backstage/backend-common';
 
-export const getProtoUploadPath = (entityName: string) =>
-  resolvePackagePath(
-    '@backstage/plugin-bloomrpc-backend',
-    path.join('proto', entityName),
-  );
+export const getProtoUploadPath = (entityName: string, defaultUploadPath = 'proto') => {  
+  return path.join(process.cwd(), defaultUploadPath, entityName)
+};
 
 export enum LoadProtoStatus {
   ok = 1,

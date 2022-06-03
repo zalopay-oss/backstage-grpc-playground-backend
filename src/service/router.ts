@@ -378,13 +378,9 @@ export async function createRouter(
 
     const services = protofiles[0].services;
 
-    if (!proxy) {
-      process.env.http_proxy = undefined;
-      process.env.https_proxy = undefined;
-    } else {
-      process.env.http_proxy = proxy;
-      process.env.https_proxy = proxy;
-    }
+    const currentHttpProxy: string | undefined = process.env.http_proxy;
+    const currentHttpsProxy: string | undefined = process.env.https_proxy;
+    const currentGrpcProxy: string | undefined = process.env.grpc_proxy;
 
     const service: ProtoService = services[serviceName];
     const protoInfo = new ProtoInfo(service, methodName);
@@ -424,6 +420,11 @@ export async function createRouter(
     function onEnd() {
       console.log('ended');
       res.end();
+
+      // set back proxy
+      process.env.http_proxy = currentHttpProxy;
+      process.env.https_proxy = currentHttpsProxy;
+      process.env.grpc_proxy = currentGrpcProxy;
     }
 
     function onData(data: object, metaInfo: ResponseMetaInformation) {
@@ -443,6 +444,13 @@ export async function createRouter(
       } else {
         res.write(chunk);
       }
+    }
+
+    // Workaround for proxy call messing with process.env.http_proxy or process.env.https_proxy
+    if (process.env.no_grpc_playground_proxy) {
+      process.env.http_proxy = '';
+      process.env.https_proxy = '';
+      process.env.grpc_proxy = '';
     }
 
     grpcRequest

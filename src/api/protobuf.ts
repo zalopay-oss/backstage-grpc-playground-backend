@@ -1,6 +1,5 @@
 import { Proto, ServiceMethodsPayload } from './bloomrpc-mock';
 import { Service } from 'protobufjs';
-import { PlaceholderFile } from './types';
 
 export interface ProtoFile {
   proto: Proto;
