@@ -3,8 +3,24 @@
   "version": "0.1.0",
   "main": "src/index.ts",
   "types": "src/index.ts",
-  "license": "Apache-2.0",
-  "private": true,
+  "license": "MIT",
+  "author": {
+    "name": "Zalopay-OSS",
+    "url": "https://github.com/zalopay-oss"
+  },
+  "description": "A backend plugin for Backstage supporting gRPC playground",
+  "homepage": "https://github.com/zalopay-oss/backstage-grpc-playground-backend",
+  "repository": {
+    "url": "https://github.com/zalopay-oss/backstage-grpc-playground-backend"
+  },
+  "keywords": [
+    "backstage",
+    "backstage plugin",
+    "gRPC",
+    "bloomrpc",
+    "gRPC playground",
+    "Zalopay"
+  ],
   "publishConfig": {
     "access": "public",
     "main": "dist/index.cjs.js",
