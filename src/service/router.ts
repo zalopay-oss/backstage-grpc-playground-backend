@@ -396,12 +396,16 @@ export async function createRouter(
       grpcRequest.isServerStreaming || grpcRequest.isClientStreaming;
 
     function onError(e: any, metaInfo: ResponseMetaInformation) {
-      res.write(
-        JSON.stringify({
-          error: e,
-          metaInfo,
-        }),
-      );
+      const chunk = JSON.stringify({
+        error: e,
+        metaInfo,
+      });
+
+      res.write(`id: ${uuid()}\n`);
+      res.write('type: data\n');
+      res.write('event: message\n');
+      res.write(`time: ${getTime()}\n`);
+      res.write(`data: ${chunk}\n\n`);
     }
 
     if (isStreaming) {
@@ -418,13 +422,14 @@ export async function createRouter(
     }
 
     function onEnd() {
-      console.log('ended');
       res.end();
 
-      // set back proxy
-      process.env.http_proxy = currentHttpProxy;
-      process.env.https_proxy = currentHttpsProxy;
-      process.env.grpc_proxy = currentGrpcProxy;
+      if (process.env.no_grpc_playground_proxy) {
+        // set back proxy
+        process.env.http_proxy = currentHttpProxy;
+        process.env.https_proxy = currentHttpsProxy;
+        process.env.grpc_proxy = currentGrpcProxy;
+      }
     }
 
     function onData(data: object, metaInfo: ResponseMetaInformation) {
@@ -432,8 +437,6 @@ export async function createRouter(
         data,
         metaInfo,
       });
-
-      console.log('OUTPUT ~ onData ~ chunk', chunk);
 
       if (isStreaming) {
         res.write(`id: ${uuid()}\n`);
@@ -448,9 +451,9 @@ export async function createRouter(
 
     // Workaround for proxy call messing with process.env.http_proxy or process.env.https_proxy
     if (process.env.no_grpc_playground_proxy) {
-      process.env.http_proxy = '';
-      process.env.https_proxy = '';
-      process.env.grpc_proxy = '';
+      delete process.env.http_proxy;
+      delete process.env.https_proxy;
+      delete process.env.grpc_proxy;
     }
 
     grpcRequest
