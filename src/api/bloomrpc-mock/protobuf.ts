@@ -25,6 +25,7 @@ export interface Proto {
   protoText: string;
   imports?: PlaceholderFile[];
   ast: GrpcObject;
+  protoDoc?: string;
   root: Root;
 }
 

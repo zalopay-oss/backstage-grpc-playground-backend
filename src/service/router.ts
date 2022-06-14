@@ -37,10 +37,13 @@ import {
   getAbsolutePath,
   getFileNameFromPath,
 } from './utils';
+import { GenDocConfig } from '../api/docGenerator';
+import { JsonValue } from '@backstage/types';
 
 export interface RouterOptions {
   logger: Logger;
   reader: UrlReader;
+  config?: JsonValue;
   integrations: ScmIntegrationRegistry;
 }
 
@@ -49,7 +52,7 @@ const getTime = () => new Date().toLocaleTimeString();
 export async function createRouter(
   options: RouterOptions,
 ): Promise<express.Router> {
-  const { logger, reader, integrations } = options;
+  const { logger, reader, integrations, config } = options;
 
   const router = Router();
   router.use(express.json());
@@ -63,6 +66,8 @@ export async function createRouter(
     reader,
     integrations,
   });
+
+  const genDocConfig = (config as any)?.document as GenDocConfig | undefined;
 
   router.get('/health', (_, response) => {
     logger.info('PONG!');
@@ -82,16 +87,14 @@ export async function createRouter(
 
     const { entity: entityName } = req.params;
     const UPLOAD_PATH = getProtoUploadPath(entityName);
-
-    const { entitySpec, preloadedProtos } = parseEntitySpec(
-      fullSpec as EntitySpec,
-    );
+    const { entitySpec, preloadedProtos } = parseEntitySpec(fullSpec as EntitySpec);
 
     // Stage 1: Load from local storage
     if (preloadedProtos?.length) {
       const { protos, status, missingImports } = await loadProtos(
         UPLOAD_PATH,
         preloadedProtos,
+        genDocConfig,
       );
 
       result.protos.push(...protos);
@@ -156,7 +159,7 @@ export async function createRouter(
           protos: files,
           missingImports,
           status,
-        } = await loadProtos(UPLOAD_PATH, filesToLoad);
+        } = await loadProtos(UPLOAD_PATH, filesToLoad, genDocConfig);
 
         // Unify result from two stages
         if (status !== undefined) {
@@ -330,7 +333,7 @@ export async function createRouter(
           }
         }
 
-        const loadProtoResult = await loadProtos(UPLOAD_PATH, filesWithImports);
+        const loadProtoResult = await loadProtos(UPLOAD_PATH, filesWithImports, genDocConfig);
         res.send(loadProtoResult);
         return;
       }
@@ -367,7 +370,7 @@ export async function createRouter(
       },
     ];
 
-    const loadProtoResult = await loadProtos(UPLOAD_PATH, filesWithImports);
+    const loadProtoResult = await loadProtos(UPLOAD_PATH, filesWithImports, genDocConfig);
 
     if (loadProtoResult.status !== LoadProtoStatus.ok) {
       res.status(400).json(loadProtoResult);

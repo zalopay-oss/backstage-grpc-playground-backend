@@ -25,6 +25,7 @@ import {
   getAbsolutePath,
   getFileNameFromPath,
 } from '../service/utils';
+import { genDoc, GenDocConfig, installDocGenerator, isInstalledProtoc } from './docGenerator';
 
 export type LoadProtoResult = {
   protos: ProtoFile[];
@@ -107,8 +108,9 @@ export async function importProtosFromServerReflection(host: string) {
 export async function loadProtos(
   basePath: string,
   protoFiles: FileWithImports[],
+  genDocConfig?: GenDocConfig,
 ): Promise<LoadProtoResult> {
-  const protoFileFromFiles = await loadProtosFromFile(basePath, protoFiles);
+  const protoFileFromFiles = await loadProtosFromFile(basePath, protoFiles, genDocConfig);
   return protoFileFromFiles;
 }
 
@@ -133,6 +135,7 @@ export async function loadProtoFromReflection(
 export async function loadProtosFromFile(
   basePath: string,
   protoFiles: FileWithImports[],
+  genDocConfig?: GenDocConfig,
 ): Promise<LoadProtoResult> {
   const result: LoadProtoResult = {
     protos: [],
@@ -182,6 +185,26 @@ export async function loadProtosFromFile(
       );
       const proto = await fromFileName(absoluteFilePath, allImports);
 
+      let protoDoc = '';
+
+      if (genDocConfig) {
+        const { protocGenDoc, enabled } = genDocConfig;
+        const { install, version } = protocGenDoc || {}
+
+        if (enabled) {
+          try {
+            if (install && version && !isInstalledProtoc()) {
+              await installDocGenerator(version);
+            }
+
+            protoDoc = genDoc(absoluteFilePath, allImports);
+          } catch (err) {
+            console.log('OUTPUT ~ genDoc phase ~ err', err);
+          }
+        }
+      }
+
+      proto.protoDoc = protoDoc;
       proto.filePath = pGetRelativePath(proto.filePath);
       proto.imports = relativeImports;
       protos.push(proto);
