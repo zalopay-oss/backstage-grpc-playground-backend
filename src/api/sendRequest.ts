@@ -7,6 +7,7 @@ import {
 } from '@grpc/grpc-js';
 import fs from "fs";
 import { Certificate } from "./types";
+import { getLogger } from "../service/utils";
 
 interface ServiceClient extends Client {
   [methodName: string]: Function;
@@ -247,6 +248,7 @@ export class GRPCRequest extends EventEmitter {
   }
 
   private getRPCDeadline(rpcType = 1) {
+    const logger = getLogger();
     let timeAllowed = 5000;
 
     switch (rpcType) {
@@ -259,7 +261,7 @@ export class GRPCRequest extends EventEmitter {
         break
 
       default:
-        console.log("Invalid RPC Type: Using Default Timeout")
+        logger.error("Invalid RPC Type: Using Default Timeout")
     }
 
     return new Date(Date.now() + timeAllowed)
@@ -271,6 +273,7 @@ export class GRPCRequest extends EventEmitter {
    * @param streamStartTime
    */
   private handleServerStreaming(call: GRPCCall, streamStartTime?: Date) {
+    const logger = getLogger();
 
     call.on('data', (data: object) => {
       const responseMetaInformation = this.responseMetaInformation(streamStartTime, true);
@@ -291,7 +294,7 @@ export class GRPCRequest extends EventEmitter {
     });
 
     call.on('end', () => {
-      console.log('call on end');
+      logger.info('call on end');
       this.emit(GRPCEventType.END, this);
     });
   }

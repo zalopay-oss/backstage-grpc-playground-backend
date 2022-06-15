@@ -36,7 +36,8 @@ import {
   validateRequestBody,
   getAbsolutePath,
   getFileNameFromPath,
-  REPO_URL
+  REPO_URL,
+  setLogger
 } from './utils';
 import { GenDocConfig, GenDocConfigWithCache, installDocGenerator, isInstalledProtocGenDoc } from '../api/docGenerator';
 import { JsonValue } from '@backstage/types';
@@ -45,7 +46,7 @@ export interface RouterOptions {
   logger: Logger;
   reader: UrlReader;
   config?: JsonValue;
-  cacheClient: CacheClient;
+  cacheClient?: CacheClient;
   integrations: ScmIntegrationRegistry;
 }
 
@@ -55,6 +56,8 @@ export async function createRouter(
   options: RouterOptions,
 ): Promise<express.Router> {
   const { logger, reader, integrations, config, cacheClient } = options;
+
+  setLogger(logger);
 
   const router = Router();
   router.use(express.json());
@@ -84,8 +87,8 @@ export async function createRouter(
         try {
           await installDocGenerator(version);
         } catch (err) {
-          console.error(`Error installing protoc-gen-doc. Please submit a new issue at ${REPO_URL}`);
-          console.error('Error:', err);
+          logger.warn(`Error installing protoc-gen-doc. Please submit a new issue at ${REPO_URL}`);
+          logger.error(err);
         }
       }
     }
@@ -97,7 +100,7 @@ export async function createRouter(
   });
 
   router.post('/proto-info/:entity', async (req, res) => {
-    const { entitySpec: fullSpec } = await validateRequestBody(
+    const { entitySpec: fullSpec, isGenDoc } = await validateRequestBody(
       req,
       getProtoInput,
     );
@@ -116,7 +119,7 @@ export async function createRouter(
       const { protos, status, missingImports } = await loadProtos(
         UPLOAD_PATH,
         preloadedProtos,
-        genDocConfig,
+        { ...genDocConfig, enabled: isGenDoc },
       );
 
       result.protos.push(...protos);
@@ -324,7 +327,7 @@ export async function createRouter(
                 return;
               }
             } catch (err) {
-              console.log('OUTPUT ~ setup storage ~ err', err);
+              logger.warn('Error setup storage', err);
             }
           }
 
@@ -355,7 +358,15 @@ export async function createRouter(
           }
         }
 
-        const loadProtoResult = await loadProtos(UPLOAD_PATH, filesWithImports, genDocConfig);
+        let isGenDoc = req.body.isGenDoc;
+
+        try {
+          isGenDoc = JSON.parse(isGenDoc);
+        } catch (err) {
+          // Ignore
+        }
+
+        const loadProtoResult = await loadProtos(UPLOAD_PATH, filesWithImports, { ...genDocConfig, enabled: isGenDoc });
         res.send(loadProtoResult);
         return;
       }
@@ -488,7 +499,7 @@ export async function createRouter(
       .send();
 
     req.once('close', () => {
-      console.log('request closed');
+      logger.info('Request closed');
       grpcRequest.cancel();
     });
   });

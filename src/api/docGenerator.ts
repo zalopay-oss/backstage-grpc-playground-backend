@@ -5,6 +5,7 @@ import https from 'https';
 import tar from 'tar';
 import { IncomingMessage } from 'http';
 import { CacheClient } from '@backstage/backend-common';
+import { getLogger } from '../service/utils';
 
 export interface GenDocConfig {
   enabled?: boolean;
@@ -19,7 +20,7 @@ export interface GenDocConfig {
 }
 
 export interface GenDocConfigWithCache extends GenDocConfig {
-  cacheClient: CacheClient;
+  cacheClient?: CacheClient;
 }
 
 let isInstalled: boolean = false;
@@ -45,7 +46,8 @@ const platform = PLATFORM_MAPPING[process.platform];
 const binDirPath = path.resolve(process.cwd(), './bin');
 
 export function isInstalledProtocGenDoc() {
-  console.info('Checking if protoc is installed');
+  const logger = getLogger();
+  logger.info('Checking if protoc is installed');
   if (isInstalled) return isInstalled;
 
   // yarn protoc will trigger @protobuf-ts/protoc binary and install protoc if needed
@@ -54,9 +56,7 @@ export function isInstalledProtocGenDoc() {
 
   // protoc-gen-doc should be in the same directory as protoc
   const protocDirPath = path.dirname(protocFilePath);
-  console.log('OUTPUT ~ isInstalledProtocGenDoc ~ protocDirPath', protocDirPath);
   let symlinkFilePath = path.resolve(protocDirPath, `./${PROTOC_DOC_BIN_NAME}`);
-  console.log('OUTPUT ~ isInstalledProtocGenDoc ~ symlinkFilePath', symlinkFilePath);
 
   if (platform === 'windows') {
     symlinkFilePath += '.exe';
@@ -75,7 +75,8 @@ export function isInstalledProtocGenDoc() {
 }
 
 function installProtocGenDoc(res: IncomingMessage) {
-  console.log('Installing protoc-gen-doc');
+  const logger = getLogger();
+  logger.info('Installing protoc-gen-doc');
   let binFilePath = path.resolve(binDirPath, `./${PROTOC_DOC_BIN_NAME}`);
   spawnSync('yarn protoc --help');
   const protocFilePath = execSync('which protoc').toString();
@@ -128,7 +129,7 @@ export async function genDoc(protoPath: string, imports?: string[], genDocConfig
 
   if (genDocConfig?.useCache?.enabled) {
     cacheClient = (genDocConfig as GenDocConfigWithCache).cacheClient;
-    const lastTime = await cacheClient.get(docFullPath) as string;
+    const lastTime = await cacheClient?.get?.(docFullPath) as string;
     if (lastTime) {
       return lastTime;
     }
