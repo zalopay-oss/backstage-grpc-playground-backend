@@ -1,4 +1,4 @@
-import { errorHandler, UrlReader } from '@backstage/backend-common';
+import { CacheClient, errorHandler, UrlReader } from '@backstage/backend-common';
 import express from 'express';
 import Router from 'express-promise-router';
 import { Logger } from 'winston';
@@ -36,14 +36,16 @@ import {
   validateRequestBody,
   getAbsolutePath,
   getFileNameFromPath,
+  REPO_URL
 } from './utils';
-import { GenDocConfig } from '../api/docGenerator';
+import { GenDocConfig, GenDocConfigWithCache, installDocGenerator, isInstalledProtocGenDoc } from '../api/docGenerator';
 import { JsonValue } from '@backstage/types';
 
 export interface RouterOptions {
   logger: Logger;
   reader: UrlReader;
   config?: JsonValue;
+  cacheClient: CacheClient;
   integrations: ScmIntegrationRegistry;
 }
 
@@ -52,7 +54,7 @@ const getTime = () => new Date().toLocaleTimeString();
 export async function createRouter(
   options: RouterOptions,
 ): Promise<express.Router> {
-  const { logger, reader, integrations, config } = options;
+  const { logger, reader, integrations, config, cacheClient } = options;
 
   const router = Router();
   router.use(express.json());
@@ -68,6 +70,26 @@ export async function createRouter(
   });
 
   const genDocConfig = (config as any)?.document as GenDocConfig | undefined;
+
+  if (genDocConfig) {
+    const { protocGenDoc, useCache } = genDocConfig;
+    const { install, version } = protocGenDoc || {}
+
+    if (install && version) {
+      if (useCache?.enabled) {
+        (genDocConfig as GenDocConfigWithCache).cacheClient = cacheClient;
+      }
+
+      if (!isInstalledProtocGenDoc()) {
+        try {
+          await installDocGenerator(version);
+        } catch (err) {
+          console.error(`Error installing protoc-gen-doc. Please submit a new issue at ${REPO_URL}`);
+          console.error('Error:', err);
+        }
+      }
+    }
+  }
 
   router.get('/health', (_, response) => {
     logger.info('PONG!');

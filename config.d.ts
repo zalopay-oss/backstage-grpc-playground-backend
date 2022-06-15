@@ -12,7 +12,14 @@ export interface Config {
       protocGenDoc?: {
         install?: boolean;
         version?: string;
-      }
+      };
+      /**
+       * Use cache for generated document or not
+       */
+      useCache?: {
+        enabled: boolean;
+        ttlInMinutes: number;
+      };
     };
   };
 }

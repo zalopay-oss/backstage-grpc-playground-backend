@@ -4,13 +4,22 @@ import fs from 'fs';
 import https from 'https';
 import tar from 'tar';
 import { IncomingMessage } from 'http';
+import { CacheClient } from '@backstage/backend-common';
 
 export interface GenDocConfig {
   enabled?: boolean;
+  useCache?: {
+    enabled: boolean;
+    ttlInMinutes: number;
+  };
   protocGenDoc?: {
     install?: boolean;
     version?: string;
-  }
+  };
+}
+
+export interface GenDocConfigWithCache extends GenDocConfig {
+  cacheClient: CacheClient;
 }
 
 let isInstalled: boolean = false;
@@ -30,14 +39,40 @@ const PLATFORM_MAPPING: Record<string, string> = {
 
 const protocGenDocBasePath = `https://github.com/pseudomuto/${PROTOC_DOC_BIN_NAME}/releases/download`;
 
-export function isInstalledProtoc() {
-  return isInstalled;
-}
-
 const arch = ARCH_MAPPING[process.arch];
 const platform = PLATFORM_MAPPING[process.platform];
 
 const binDirPath = path.resolve(process.cwd(), './bin');
+
+export function isInstalledProtocGenDoc() {
+  console.info('Checking if protoc is installed');
+  if (isInstalled) return isInstalled;
+
+  // yarn protoc will trigger @protobuf-ts/protoc binary and install protoc if needed
+  spawnSync('yarn protoc --help');
+  const protocFilePath = execSync('which protoc').toString();
+
+  // protoc-gen-doc should be in the same directory as protoc
+  const protocDirPath = path.dirname(protocFilePath);
+  console.log('OUTPUT ~ isInstalledProtocGenDoc ~ protocDirPath', protocDirPath);
+  let symlinkFilePath = path.resolve(protocDirPath, `./${PROTOC_DOC_BIN_NAME}`);
+  console.log('OUTPUT ~ isInstalledProtocGenDoc ~ symlinkFilePath', symlinkFilePath);
+
+  if (platform === 'windows') {
+    symlinkFilePath += '.exe';
+  }
+
+  try {
+    if (fs.lstatSync(symlinkFilePath).isSymbolicLink()) {
+      // Already installed
+      isInstalled = true;
+    }
+  } catch (err) {
+    // Ignore
+  }
+
+  return isInstalled;
+}
 
 function installProtocGenDoc(res: IncomingMessage) {
   console.log('Installing protoc-gen-doc');
@@ -50,15 +85,6 @@ function installProtocGenDoc(res: IncomingMessage) {
   if (platform === 'windows') {
     binFilePath += '.exe';
     symlinkFilePath += '.exe';
-  }
-
-  try {
-    if (fs.existsSync(symlinkFilePath)) {
-      fs.rmSync(symlinkFilePath);
-    }
-  } catch (err) {
-    console.log('OUTPUT ~ installProtocGenDoc ~ err', err);
-    // Ignore
   }
 
   res.pipe(tar.x({ strip: 1, cwd: binDirPath }));
@@ -84,6 +110,7 @@ async function downloadFile(url: string) {
 }
 
 export async function installDocGenerator(protocGenDocVersion: string) {
+  // Download from github
   const protocGenDocTarFile = `${PROTOC_DOC_BIN_NAME}_${protocGenDocVersion}_${platform}_${arch}.tar.gz`;
   const protocGenDocTarPath = `v${protocGenDocVersion}/${protocGenDocTarFile}`;
   const protocGenDocUrl = `${protocGenDocBasePath}/${protocGenDocTarPath}`;
@@ -92,14 +119,19 @@ export async function installDocGenerator(protocGenDocVersion: string) {
   installProtocGenDoc(res);
 }
 
-export function genDoc(protoPath: string, imports?: string[]) {
+export async function genDoc(protoPath: string, imports?: string[], genDocConfig?: GenDocConfig) {
   const protoDir = path.dirname(protoPath);
   const protoName = path.basename(protoPath, '.proto');
   const docPath = `${protoName}.md`;
+  const docFullPath = path.join(protoDir, docPath);
+  let cacheClient: CacheClient | undefined;
 
-  // TODO cache invalidation
-  if (fs.existsSync(path.join(protoDir, docPath))) {
-    return fs.readFileSync(path.join(protoDir, docPath), 'utf8');
+  if (genDocConfig?.useCache?.enabled) {
+    cacheClient = (genDocConfig as GenDocConfigWithCache).cacheClient;
+    const lastTime = await cacheClient.get(docFullPath) as string;
+    if (lastTime) {
+      return lastTime;
+    }
   }
 
   let command = `cd ${protoDir} \
@@ -116,5 +148,11 @@ export function genDoc(protoPath: string, imports?: string[]) {
   execSync(command);
 
   const doc = fs.readFileSync(path.join(protoDir, docPath), 'utf8');
+
+  if (genDocConfig?.useCache?.enabled) {
+    await cacheClient!.set(docFullPath, doc, {
+      ttl: genDocConfig.useCache.ttlInMinutes * 60000,
+    });
+  }
   return doc;
 }

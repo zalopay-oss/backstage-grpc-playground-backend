@@ -24,8 +24,9 @@ import {
   getRelativePath,
   getAbsolutePath,
   getFileNameFromPath,
+  REPO_URL,
 } from '../service/utils';
-import { genDoc, GenDocConfig, installDocGenerator, isInstalledProtoc } from './docGenerator';
+import { genDoc, GenDocConfig } from './docGenerator';
 
 export type LoadProtoResult = {
   protos: ProtoFile[];
@@ -187,20 +188,12 @@ export async function loadProtosFromFile(
 
       let protoDoc = '';
 
-      if (genDocConfig) {
-        const { protocGenDoc, enabled } = genDocConfig;
-        const { install, version } = protocGenDoc || {}
-
-        if (enabled) {
-          try {
-            if (install && version && !isInstalledProtoc()) {
-              await installDocGenerator(version);
-            }
-
-            protoDoc = genDoc(absoluteFilePath, allImports);
-          } catch (err) {
-            console.log('OUTPUT ~ genDoc phase ~ err', err);
-          }
+      if (genDocConfig?.enabled) {
+        try {
+          protoDoc = await genDoc(absoluteFilePath, allImports, genDocConfig);
+        } catch (err) {
+          console.error(`Error generating document. Please submit a new issue at ${REPO_URL}`);
+          console.error(`Error:`, err);
         }
       }
 

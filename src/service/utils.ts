@@ -4,7 +4,9 @@ import { Request } from 'express';
 import lodash from 'lodash';
 import path from 'path';
 
-export const getProtoUploadPath = (entityName: string, defaultUploadPath = 'proto') => {  
+export const REPO_URL = 'https://github.com/zalopay-oss/backstage-grpc-playground-backend'
+
+export const getProtoUploadPath = (entityName: string, defaultUploadPath = 'proto') => {
   return path.join(process.cwd(), defaultUploadPath, entityName)
 };
 
