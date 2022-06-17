@@ -87,8 +87,7 @@ export async function getProtosFromEntitySpec(
       imports: imports.map(pSaveProtoTextAsFile),
     };
   } catch (err) {
-    logger.info(`Error getProtosFromEntitySpec`);
-    logger.error(err);
+    logger.error('Error getProtosFromEntitySpec', err);
   }
 
   return null;
@@ -197,8 +196,7 @@ export async function loadProtosFromFile(
         try {
           protoDoc = await genDoc(absoluteFilePath, allImports, genDocConfig);
         } catch (err) {
-          logger.warn(`Error generating document. Please submit a new issue at ${REPO_URL}`);
-          logger.error(err);
+          logger.error(`Error generating document. Please submit a new issue at ${REPO_URL}`, err);
         }
       }
 

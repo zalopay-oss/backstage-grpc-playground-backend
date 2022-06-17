@@ -87,8 +87,7 @@ export async function createRouter(
         try {
           await installDocGenerator(version);
         } catch (err) {
-          logger.warn(`Error installing protoc-gen-doc. Please submit a new issue at ${REPO_URL}`);
-          logger.error(err);
+          logger.error(`Error installing protoc-gen-doc. Please submit a new issue at ${REPO_URL}`, err);
         }
       }
     }
