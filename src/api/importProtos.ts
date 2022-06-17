@@ -24,7 +24,10 @@ import {
   getRelativePath,
   getAbsolutePath,
   getFileNameFromPath,
+  REPO_URL,
+  getLogger,
 } from '../service/utils';
+import { genDoc, GenDocConfig } from './docGenerator';
 
 export type LoadProtoResult = {
   protos: ProtoFile[];
@@ -71,6 +74,8 @@ export async function getProtosFromEntitySpec(
   entitySpec: EntitySpec,
   placeholderProcessor: CustomPlaceholderProcessor,
 ) {
+  const logger = getLogger();
+  
   try {
     const { files: files, imports } =
       await placeholderProcessor.processEntitySpec(entitySpec);
@@ -82,7 +87,8 @@ export async function getProtosFromEntitySpec(
       imports: imports.map(pSaveProtoTextAsFile),
     };
   } catch (err) {
-    console.log('OUTPUT ~ getProtosFromEntitySpec ~ err', err);
+    logger.info(`Error getProtosFromEntitySpec`);
+    logger.error(err);
   }
 
   return null;
@@ -107,8 +113,9 @@ export async function importProtosFromServerReflection(host: string) {
 export async function loadProtos(
   basePath: string,
   protoFiles: FileWithImports[],
+  genDocConfig?: GenDocConfig,
 ): Promise<LoadProtoResult> {
-  const protoFileFromFiles = await loadProtosFromFile(basePath, protoFiles);
+  const protoFileFromFiles = await loadProtosFromFile(basePath, protoFiles, genDocConfig);
   return protoFileFromFiles;
 }
 
@@ -133,7 +140,9 @@ export async function loadProtoFromReflection(
 export async function loadProtosFromFile(
   basePath: string,
   protoFiles: FileWithImports[],
+  genDocConfig?: GenDocConfig,
 ): Promise<LoadProtoResult> {
+  const logger = getLogger();
   const result: LoadProtoResult = {
     protos: [],
     missingImports: [],
@@ -182,11 +191,23 @@ export async function loadProtosFromFile(
       );
       const proto = await fromFileName(absoluteFilePath, allImports);
 
+      let protoDoc = '';
+
+      if (genDocConfig?.enabled) {
+        try {
+          protoDoc = await genDoc(absoluteFilePath, allImports, genDocConfig);
+        } catch (err) {
+          logger.warn(`Error generating document. Please submit a new issue at ${REPO_URL}`);
+          logger.error(err);
+        }
+      }
+
+      proto.protoDoc = protoDoc;
       proto.filePath = pGetRelativePath(proto.filePath);
       proto.imports = relativeImports;
       protos.push(proto);
     } catch (err) {
-      console.log('OUTPUT ~ loadProtosFromFile ~ err', err);
+      logger.warn('OUTPUT ~ loadProtosFromFile ~ err', err);
       if (err.errno === -2) {
         const missingImports: PlaceholderFile[] = [];
         const capturedMissing = capturedFromWarning || err.path;

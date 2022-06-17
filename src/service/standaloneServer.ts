@@ -35,6 +35,7 @@ export async function startStandaloneServer(
   const integrations = ScmIntegrations.fromConfig(config);
   const reader = UrlReaders.default({ logger, config });
   const router = await createRouter({
+    config: config.getOptional('grpcPlayground'),
     logger,
     integrations,
     reader

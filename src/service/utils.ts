@@ -3,8 +3,21 @@ import { z } from 'zod';
 import { Request } from 'express';
 import lodash from 'lodash';
 import path from 'path';
+import { Logger } from 'winston';
 
-export const getProtoUploadPath = (entityName: string, defaultUploadPath = 'proto') => {  
+export const REPO_URL = 'https://github.com/zalopay-oss/backstage-grpc-playground-backend'
+
+let _logger: Logger;
+
+export const setLogger = (logger: Logger) => {
+  _logger = logger;
+}
+
+export const getLogger = () => {
+  return _logger;
+}
+
+export const getProtoUploadPath = (entityName: string, defaultUploadPath = 'proto') => {
   return path.join(process.cwd(), defaultUploadPath, entityName)
 };
 
@@ -130,4 +143,5 @@ export const getProtoInput = z.object({
     imports: z.array(placeholderFile).optional(),
     targets: z.unknown(),
   }),
+  isGenDoc: z.boolean().optional(),
 });

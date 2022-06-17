@@ -1,4 +1,4 @@
-import { errorHandler, UrlReader } from '@backstage/backend-common';
+import { CacheClient, errorHandler, UrlReader } from '@backstage/backend-common';
 import express from 'express';
 import Router from 'express-promise-router';
 import { Logger } from 'winston';
@@ -36,11 +36,17 @@ import {
   validateRequestBody,
   getAbsolutePath,
   getFileNameFromPath,
+  REPO_URL,
+  setLogger
 } from './utils';
+import { GenDocConfig, GenDocConfigWithCache, installDocGenerator, isInstalledProtocGenDoc } from '../api/docGenerator';
+import { JsonValue } from '@backstage/types';
 
 export interface RouterOptions {
   logger: Logger;
   reader: UrlReader;
+  config?: JsonValue;
+  cacheClient?: CacheClient;
   integrations: ScmIntegrationRegistry;
 }
 
@@ -49,7 +55,9 @@ const getTime = () => new Date().toLocaleTimeString();
 export async function createRouter(
   options: RouterOptions,
 ): Promise<express.Router> {
-  const { logger, reader, integrations } = options;
+  const { logger, reader, integrations, config, cacheClient } = options;
+
+  setLogger(logger);
 
   const router = Router();
   router.use(express.json());
@@ -64,13 +72,35 @@ export async function createRouter(
     integrations,
   });
 
+  const genDocConfig = (config as any)?.document as GenDocConfig | undefined;
+
+  if (genDocConfig) {
+    const { protocGenDoc, useCache } = genDocConfig;
+    const { install, version } = protocGenDoc || {}
+
+    if (install && version) {
+      if (useCache?.enabled) {
+        (genDocConfig as GenDocConfigWithCache).cacheClient = cacheClient;
+      }
+
+      if (!isInstalledProtocGenDoc()) {
+        try {
+          await installDocGenerator(version);
+        } catch (err) {
+          logger.warn(`Error installing protoc-gen-doc. Please submit a new issue at ${REPO_URL}`);
+          logger.error(err);
+        }
+      }
+    }
+  }
+
   router.get('/health', (_, response) => {
     logger.info('PONG!');
     response.send({ status: 'ok' });
   });
 
   router.post('/proto-info/:entity', async (req, res) => {
-    const { entitySpec: fullSpec } = await validateRequestBody(
+    const { entitySpec: fullSpec, isGenDoc } = await validateRequestBody(
       req,
       getProtoInput,
     );
@@ -82,16 +112,14 @@ export async function createRouter(
 
     const { entity: entityName } = req.params;
     const UPLOAD_PATH = getProtoUploadPath(entityName);
-
-    const { entitySpec, preloadedProtos } = parseEntitySpec(
-      fullSpec as EntitySpec,
-    );
+    const { entitySpec, preloadedProtos } = parseEntitySpec(fullSpec as EntitySpec);
 
     // Stage 1: Load from local storage
     if (preloadedProtos?.length) {
       const { protos, status, missingImports } = await loadProtos(
         UPLOAD_PATH,
         preloadedProtos,
+        { ...genDocConfig, enabled: isGenDoc },
       );
 
       result.protos.push(...protos);
@@ -156,7 +184,7 @@ export async function createRouter(
           protos: files,
           missingImports,
           status,
-        } = await loadProtos(UPLOAD_PATH, filesToLoad);
+        } = await loadProtos(UPLOAD_PATH, filesToLoad, genDocConfig);
 
         // Unify result from two stages
         if (status !== undefined) {
@@ -299,7 +327,7 @@ export async function createRouter(
                 return;
               }
             } catch (err) {
-              console.log('OUTPUT ~ setup storage ~ err', err);
+              logger.warn('Error setup storage', err);
             }
           }
 
@@ -330,7 +358,15 @@ export async function createRouter(
           }
         }
 
-        const loadProtoResult = await loadProtos(UPLOAD_PATH, filesWithImports);
+        let isGenDoc = req.body.isGenDoc;
+
+        try {
+          isGenDoc = JSON.parse(isGenDoc);
+        } catch (err) {
+          // Ignore
+        }
+
+        const loadProtoResult = await loadProtos(UPLOAD_PATH, filesWithImports, { ...genDocConfig, enabled: isGenDoc });
         res.send(loadProtoResult);
         return;
       }
@@ -367,7 +403,7 @@ export async function createRouter(
       },
     ];
 
-    const loadProtoResult = await loadProtos(UPLOAD_PATH, filesWithImports);
+    const loadProtoResult = await loadProtos(UPLOAD_PATH, filesWithImports, genDocConfig);
 
     if (loadProtoResult.status !== LoadProtoStatus.ok) {
       res.status(400).json(loadProtoResult);
@@ -463,7 +499,7 @@ export async function createRouter(
       .send();
 
     req.once('close', () => {
-      console.log('request closed');
+      logger.info('Request closed');
       grpcRequest.cancel();
     });
   });

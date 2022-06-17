@@ -1,6 +1,7 @@
 import { UntypedServiceImplementation } from '@grpc/grpc-js';
 import { Enum, Field, MapField, Message, OneOf, Service, Type } from 'protobufjs';
 import { v4 } from 'uuid';
+import { getLogger } from '../../service/utils';
 
 export interface MethodPayload {
   plain: { [key: string]: any };
@@ -29,6 +30,8 @@ export function mockServiceMethods(
   service: Service,
   mocks?: void | {},
 ): UntypedServiceImplementation {
+  const logger = getLogger();
+
   const mockedMethodsPayloads = mockResponseMethods(service, mocks);
 
   return Object.keys(mockedMethodsPayloads).reduce((methods: UntypedServiceImplementation, method: string) => {
@@ -38,7 +41,7 @@ export function mockServiceMethods(
       // Client side streaming
       if (service.methods[method].requestStream) {
         call.on('data', (data: any) => {
-          console.log('Received data: ', data);
+          logger.info('Received data: ', data);
         });
 
         call.on('end', () => {
