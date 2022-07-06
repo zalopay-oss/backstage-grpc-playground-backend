@@ -1,4 +1,4 @@
-import { execSync, spawnSync } from 'child_process';
+import { execSync } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import https from 'https';
@@ -161,7 +161,8 @@ function installProtocGenDoc(res: IncomingMessage) {
   const logger = getLogger();
   logger.info('Installing protoc-gen-doc');
   let binFilePath = path.resolve(binDirPath, `./${PROTOC_DOC_BIN_NAME}`);
-  spawnSync('yarn protoc --help');
+  // spawnSync('yarn protoc --help');
+  execSync('yarn protoc --help');
   const { path: _protocFilePath } = getProtocPath();
 
   if (!_protocFilePath) {
