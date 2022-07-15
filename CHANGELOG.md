@@ -1,5 +1,13 @@
 # Changelog
 
+## [v0.1.3](https://github.com/zalopay-oss/backstage-grpc-playground-backend/tree/v0.1.3) (2022-07-15)
+
+[Full Changelog](https://github.com/zalopay-oss/backstage-grpc-playground-backend/compare/v0.1.2...v0.1.3)
+
+**Merged pull requests:**
+
+- v0.1.3 [\#2](https://github.com/zalopay-oss/backstage-grpc-playground-backend/pull/2) ([fr0stf0x](https://github.com/fr0stf0x))
+
 ## [v0.1.2](https://github.com/zalopay-oss/backstage-grpc-playground-backend/tree/v0.1.2) (2022-06-17)
 
 [Full Changelog](https://github.com/zalopay-oss/backstage-grpc-playground-backend/compare/v0.1.2-next.0...v0.1.2)
