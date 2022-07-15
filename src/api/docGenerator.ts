@@ -73,11 +73,11 @@ export function isInstalledProtocGenDoc() {
   logger.info('Checking if protoc is installed');
   if (isInstalled) return isInstalled;
 
-  const { path: protocFilePath, isSymbolicLink } = getProtocPath();
+  const { path: pProtocFilePath, isSymbolicLink } = getProtocPath();
 
-  if (protocFilePath) {
+  if (pProtocFilePath) {
     // protoc-gen-doc should be in the same directory as protoc
-    const protocDirPath = path.dirname(protocFilePath);
+    const protocDirPath = path.dirname(pProtocFilePath);
     let symlinkFilePath = path.resolve(protocDirPath, `./${PROTOC_DOC_BIN_NAME}`);
 
     if (platform === 'windows') {
@@ -96,7 +96,7 @@ export function isInstalledProtocGenDoc() {
     if (isSymbolicLink) {
       // If protoc is not found in $PATH, we add it to
       try {
-        execSync(`export PATH=$PATH:${protocFilePath}`);
+        execSync(`export PATH=$PATH:${pProtocFilePath}`);
         logger.info('which protoc', execSync('which protoc').toString());
       } catch (err) {
         logger.error(`Can not export protoc path to $PATH env. Please submit a new issue at ${REPO_URL}`);

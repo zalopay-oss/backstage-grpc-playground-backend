@@ -430,19 +430,6 @@ export async function createRouter(
     const isStreaming =
       grpcRequest.isServerStreaming || grpcRequest.isClientStreaming;
 
-    function onError(e: any, metaInfo: ResponseMetaInformation) {
-      const chunk = JSON.stringify({
-        error: e,
-        metaInfo,
-      });
-
-      res.write(`id: ${uuid()}\n`);
-      res.write('type: data\n');
-      res.write('event: message\n');
-      res.write(`time: ${getTime()}\n`);
-      res.write(`data: ${chunk}\n\n`);
-    }
-
     if (isStreaming) {
       res.writeHead(200, {
         'Content-Type': 'text/event-stream',
@@ -454,6 +441,23 @@ export async function createRouter(
       res.writeHead(200, {
         'Content-Type': 'application/json',
       });
+    }
+
+    function onError(e: any, metaInfo: ResponseMetaInformation) {
+      const chunk = JSON.stringify({
+        error: e,
+        metaInfo,
+      });
+
+      if (isStreaming) {
+        res.write(`id: ${uuid()}\n`);
+        res.write('type: data\n');
+        res.write('event: message\n');
+        res.write(`time: ${getTime()}\n`);
+        res.write(`data: ${chunk}\n\n`);
+      } else {
+        res.write(chunk);
+      }
     }
 
     function onEnd() {
