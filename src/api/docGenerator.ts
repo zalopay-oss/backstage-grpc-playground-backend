@@ -241,7 +241,7 @@ export async function genDoc(protoPath: string, imports?: string[], genDocConfig
   const doc = fs.readFileSync(path.join(protoDir, docPath), 'utf8');
 
   if (genDocConfig?.useCache?.enabled) {
-    await cacheClient!.set(docFullPath, doc, {
+    await cacheClient?.set(docFullPath, doc, {
       ttl: genDocConfig.useCache.ttlInMinutes * 60000,
     });
   }
