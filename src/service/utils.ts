@@ -21,10 +21,20 @@ export const getProtoUploadPath = (entityName: string, defaultUploadPath = 'prot
   return path.join(process.cwd(), defaultUploadPath, entityName)
 };
 
+export const getCertUploadPath = (entityName: string, defaultUploadPath = 'certs') => {
+  return path.join(process.cwd(), defaultUploadPath, entityName)
+};
+
 export enum LoadProtoStatus {
   ok = 1,
   fail = -1,
   part = 0,
+}
+
+export enum LoadCertStatus {
+  ok = 3,
+  fail = 4,
+  part = 5
 }
 
 export function getFileNameFromPath(p: string) {
@@ -116,6 +126,12 @@ export const placeholderFile = (() => {
   });
 })();
 
+const certFile = z.object({
+  fileName: z.string(),
+  filePath: z.string(),
+  type: z.enum(['rootCert', 'privateKey', 'certChain']),
+});
+
 export const sendRequestInput = z
   .object({
     requestId: z.string(),
@@ -126,6 +142,13 @@ export const sendRequestInput = z
         stream: z.any(),
       })
       .required(),
+    tlsCertificate: z.object({
+      useServerCertificate: z.boolean().optional(),
+      rootCert: certFile,
+      privateKey: certFile.optional(),
+      certChain: certFile.optional(), 
+      sslTargetHost: z.string().optional(),
+    }).optional(),
     proto: z.string(),
     methodName: z.string(),
     serviceName: z.string(),
