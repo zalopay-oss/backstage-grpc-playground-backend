@@ -6,7 +6,7 @@ import multer from 'multer';
 import { v4 as uuid } from 'uuid';
 import fs from 'fs';
 import { PlaceholderResolver } from '@backstage/plugin-catalog-backend';
-import { uniqBy } from 'lodash';
+import { partial, uniqBy } from 'lodash';
 import { ScmIntegrationRegistry } from '@backstage/integration';
 
 import {
@@ -26,6 +26,9 @@ import {
   ensureDirectoryExistence,
   textPlaceholderResolver,
   CustomPlaceholderProcessor,
+  LoadCertResult,
+  CertFile,
+  Certificate,
 } from './../api';
 
 import {
@@ -37,7 +40,10 @@ import {
   getAbsolutePath,
   getFileNameFromPath,
   REPO_URL,
-  setLogger
+  setLogger,
+  getRelativePath,
+  resolveRelativePath,
+  LoadCertStatus
 } from './utils';
 import { GenDocConfig, GenDocConfigWithCache, installDocGenerator, isInstalledProtocGenDoc } from '../api/docGenerator';
 import { JsonValue } from '@backstage/types';
@@ -377,11 +383,85 @@ export async function createRouter(
     });
   });
 
+  router.post('/upload-cert/:entity', async (req, res) => {
+    const { entity: entityName } = req.params;
+    const UPLOAD_PATH = getProtoUploadPath(entityName, 'certs');
+
+    const pGetRelativePath = partial(getRelativePath, UPLOAD_PATH);
+
+    const storage = multer.diskStorage({
+      destination: function (_req, _file, callback) {
+        if (!fs.existsSync(UPLOAD_PATH)) {
+          fs.mkdirSync(UPLOAD_PATH, {
+            recursive: true,
+          });
+        }
+
+        callback(null, UPLOAD_PATH);
+      },
+
+      filename: function (_req, file, callback) {
+        const fileName = file.originalname;
+
+        // handle duplication
+        // if (fs.existsSync(resolveRelativePath(file.originalname))) {
+        //   const { ext, name } = path.parse(file.originalname);
+        //   fileName = `${name}-${timestamp()}${ext}`;
+        // }
+
+        callback(null, fileName);
+      },
+    });
+
+    const upload = multer({ storage });
+
+    upload.array('files[]', 10)(req, res, async () => {
+      if (req.files?.length) {
+        const files = req.files as Express.Multer.File[];
+        const returnFiles: CertFile[] = [];
+
+        files.forEach(file => {
+          if (req.body.fileMappings) {
+            let fileMappings;
+
+            try {
+              fileMappings = JSON.parse(req.body.fileMappings);
+
+              if (fileMappings[file.filename]) {
+                returnFiles.push({
+                  fileName: file.filename,
+                  filePath: pGetRelativePath(file.path),
+                  type: fileMappings[file.filename].type,
+                });
+              }
+            } catch (err) {
+              logger.warn('Error setup storage', err);
+            }
+          }
+        })
+
+        const result: LoadCertResult = {
+          status: LoadCertStatus.ok,
+          certs: returnFiles,
+        }
+
+        res.send(result);
+        return;
+      }
+
+      res.send({
+        status: LoadProtoStatus.fail,
+        message: 'Empty files',
+      });
+    });
+  });
+
   router.post('/send-request/:entity', async (req, res) => {
     const clientRequest = await validateRequestBody(req, sendRequestInput);
     const { entity: entityName } = req.params;
 
     const UPLOAD_PATH = getProtoUploadPath(entityName);
+    const CERT_PATH = getProtoUploadPath(entityName, 'certs');
 
     const {
       proto: protoPath,
@@ -391,7 +471,7 @@ export async function createRouter(
       url,
       requestData,
       interactive,
-      proxy,
+      tlsCertificate,
     } = clientRequest;
 
     const filesWithImports: FileWithImports[] = [
@@ -420,11 +500,68 @@ export async function createRouter(
     const service: ProtoService = services[serviceName];
     const protoInfo = new ProtoInfo(service, methodName);
 
+    let trueTlsCertificate: typeof tlsCertificate | undefined;
+
+    if (tlsCertificate) {
+      trueTlsCertificate = { ...tlsCertificate };
+
+      const missingCerts: NonNullable<LoadCertResult['missingCerts']> = [];
+      const pGetAbsolutePath = partial(getAbsolutePath, CERT_PATH);
+
+      function getCertFromPath(cert: Omit<CertFile, 'type'>, type: 'rootCert' | 'privateKey' | 'certChain') {
+        try {
+          trueTlsCertificate![type] = {
+            fileName: cert.fileName || '',
+            filePath: pGetAbsolutePath(cert.filePath || ''),
+            type,
+          }
+
+          fs.readFileSync(trueTlsCertificate![type]!.filePath!);
+        } catch (err) {
+          if (err.errno === -2) {
+            // Handle err
+            missingCerts.push({
+              ...cert,
+              type,
+              // certificate: tlsCertificate as Certificate,
+            });
+          }
+        }
+      }
+
+      if (!tlsCertificate.useServerCertificate) {
+        if (tlsCertificate.rootCert) {
+          getCertFromPath(tlsCertificate.rootCert, 'rootCert');
+        }
+
+        if (tlsCertificate.privateKey) {
+          getCertFromPath(tlsCertificate.privateKey, 'privateKey');
+        }
+
+        if (tlsCertificate.certChain) {
+          getCertFromPath(tlsCertificate.certChain, 'certChain');
+        }
+      }
+
+      if (missingCerts.length) {
+        const result: LoadCertResult = {
+          status: LoadCertStatus.part,
+          missingCerts,
+          certificate: tlsCertificate,
+        }
+
+        res.status(400).json(result);
+
+        return;
+      }
+    }
+
     const grpcRequest = new GRPCRequest({
       url,
       requestData,
       protoInfo,
       interactive,
+      tlsCertificate: trueTlsCertificate as Certificate
     });
 
     const isStreaming =

@@ -27,6 +27,12 @@ export enum LoadProtoStatus {
   part = 0,
 }
 
+export enum LoadCertStatus {
+  ok = 3,
+  fail = 4,
+  part = 5
+}
+
 export function getFileNameFromPath(p: string) {
   return path.basename(p);
 }
@@ -116,6 +122,12 @@ export const placeholderFile = (() => {
   });
 })();
 
+const certFile = z.object({
+  fileName: z.string(),
+  filePath: z.string(),
+  type: z.enum(['rootCert', 'privateKey', 'certChain']),
+});
+
 export const sendRequestInput = z
   .object({
     requestId: z.string(),
@@ -126,6 +138,13 @@ export const sendRequestInput = z
         stream: z.any(),
       })
       .required(),
+    tlsCertificate: z.object({
+      useServerCertificate: z.boolean().optional(),
+      rootCert: certFile,
+      privateKey: certFile.optional(),
+      certChain: certFile.optional(), 
+      sslTargetHost: z.string().optional(),
+    }).optional(),
     proto: z.string(),
     methodName: z.string(),
     serviceName: z.string(),
