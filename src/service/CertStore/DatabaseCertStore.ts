@@ -46,7 +46,6 @@ const TABLE_CERTIFICATE_FILES = 'certificate_files';
 type CertificateRow = {
   id: string;
   created_at: Date;
-  updated_at: Date;
   entity_name: string;
   use_server_certificate: boolean;
 }
@@ -202,10 +201,6 @@ export class DatabaseCertStore implements CertStore {
       })
       .onConflict(['certificate_id', 'type'])
       .merge(['file_content', 'file_name', 'file_path']);
-
-    await this.database<CertificateRow>(TABLE_CERTIFICATES)
-      .where('id', id)
-      .update('updated_at', now);
   }
 
   async deleteCertificate(id: string): Promise<void> {

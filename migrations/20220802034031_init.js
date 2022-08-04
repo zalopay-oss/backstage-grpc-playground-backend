@@ -19,11 +19,7 @@ exports.up = async function (knex) {
           .timestamp('created_at', { useTz: false, precision: 0 })
           .notNullable()
           .defaultTo(knex.fn.now())
-          .comment('The creation time of the cert');
-
-        table
-          .timestamp('updated_at', { useTz: false, precision: 0 })
-          .comment('The update time of the cert');
+          .comment('The creation time of the cert')
           
         // table.string('root_cert_path');
         // table.string('root_cert_name');

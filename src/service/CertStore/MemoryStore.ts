@@ -6,7 +6,6 @@ import { pick } from "lodash";
 
 type CertificateRow = Certificate & {
   createdAt: Date;
-  updatedAt?: Date;
   entityName: string;
 }
 
@@ -57,7 +56,6 @@ export class MemoryCertStore implements CertStore {
       };
 
       certificate[cert.type] = newCertFile;
-      certificate.updatedAt = now;
     }
   }
 
