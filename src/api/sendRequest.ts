@@ -211,11 +211,6 @@ export class GRPCRequest extends EventEmitter {
       }
       if (this.tlsCertificate.useServerCertificate === true) {
         creds = credentials.createSsl();
-        // creds = credentials.createSsl(
-        //   fs.readFileSync('/Users/thaotx/Desktop/node-grpc-ssl/certs/ca.crt'),
-        //   fs.readFileSync('/Users/thaotx/Desktop/node-grpc-ssl/certs/client.key'),
-        //   fs.readFileSync('/Users/thaotx/Desktop/node-grpc-ssl/certs/client.crt'),
-        // );
       } else {
         try {
           creds = credentials.createSsl(

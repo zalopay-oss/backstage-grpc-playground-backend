@@ -310,13 +310,6 @@ export async function createRouter(
 
       filename: function (_req, file, callback) {
         const fileName = file.originalname;
-
-        // handle duplication
-        // if (fs.existsSync(resolveRelativePath(file.originalname))) {
-        //   const { ext, name } = path.parse(file.originalname);
-        //   fileName = `${name}-${timestamp()}${ext}`;
-        // }
-
         callback(null, fileName);
       },
     });
@@ -421,13 +414,6 @@ export async function createRouter(
 
       filename: function (_req, file, callback) {
         const fileName = file.originalname;
-
-        // handle duplication
-        // if (fs.existsSync(resolveRelativePath(file.originalname))) {
-        //   const { ext, name } = path.parse(file.originalname);
-        //   fileName = `${name}-${timestamp()}${ext}`;
-        // }
-
         callback(null, fileName);
       },
     });
