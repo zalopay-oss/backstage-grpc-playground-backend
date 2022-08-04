@@ -1,4 +1,4 @@
-import { CacheClient, errorHandler, UrlReader } from '@backstage/backend-common';
+import { CacheClient, errorHandler, PluginDatabaseManager, UrlReader } from '@backstage/backend-common';
 import express from 'express';
 import Router from 'express-promise-router';
 import { Logger } from 'winston';
@@ -47,12 +47,15 @@ import {
 } from './utils';
 import { GenDocConfig, GenDocConfigWithCache, installDocGenerator, isInstalledProtocGenDoc } from '../api/docGenerator';
 import { JsonValue } from '@backstage/types';
+import { CertStore } from './CertStore';
 
 export interface RouterOptions {
   logger: Logger;
   reader: UrlReader;
   config?: JsonValue;
+  certStore?: CertStore;
   cacheClient?: CacheClient;
+  database: PluginDatabaseManager;
   integrations: ScmIntegrationRegistry;
 }
 
@@ -61,9 +64,10 @@ const getTime = () => new Date().toLocaleTimeString();
 export async function createRouter(
   options: RouterOptions,
 ): Promise<express.Router> {
-  const { logger, reader, integrations, config, cacheClient } = options;
+  const { logger, reader, certStore, integrations, config, cacheClient } = options;
 
   setLogger(logger);
+  logger.info(`Creating router grpc-playground with certStore enabled: ${!!certStore}`);
 
   const router = Router();
   router.use(express.json());
@@ -102,6 +106,22 @@ export async function createRouter(
   router.get('/health', (_, response) => {
     logger.info('PONG!');
     response.send({ status: 'ok' });
+  });
+
+  router.get('/certificates/:entity', async (req, res) => {
+    const { entity: entityName } = req.params;
+
+    if (!certStore) {
+      res.status(400).send({
+        status: LoadCertStatus.fail,
+        message: 'Certificate store not configured'
+      });
+      return;
+    }
+
+    const certificates = await certStore.listCertificates(entityName);
+
+    res.send(certificates);
   });
 
   router.post('/proto-info/:entity', async (req, res) => {
@@ -385,19 +405,18 @@ export async function createRouter(
 
   router.post('/upload-cert/:entity', async (req, res) => {
     const { entity: entityName } = req.params;
-    const UPLOAD_PATH = getProtoUploadPath(entityName, 'certs');
-
-    const pGetRelativePath = partial(getRelativePath, UPLOAD_PATH);
+    const CERT_PATH = getProtoUploadPath(entityName, 'certs');
+    const pGetRelativePath = partial(getRelativePath, CERT_PATH);
 
     const storage = multer.diskStorage({
       destination: function (_req, _file, callback) {
-        if (!fs.existsSync(UPLOAD_PATH)) {
-          fs.mkdirSync(UPLOAD_PATH, {
+        if (!fs.existsSync(CERT_PATH)) {
+          fs.mkdirSync(CERT_PATH, {
             recursive: true,
           });
         }
 
-        callback(null, UPLOAD_PATH);
+        callback(null, CERT_PATH);
       },
 
       filename: function (_req, file, callback) {
@@ -420,28 +439,90 @@ export async function createRouter(
         const files = req.files as Express.Multer.File[];
         const returnFiles: CertFile[] = [];
 
-        files.forEach(file => {
+        let certificate!: Certificate;
+        let rootCert: CertFile | undefined;
+
+        if (req.body.certificate) {
+          try {
+            certificate = JSON.parse(req.body.certificate);
+          } catch (err) {
+            // ignore
+          }
+        }
+
+        try {
+          certificate = {
+            ...(certificate || {}),
+          } as Certificate;
+        } catch (err) {
+          logger.warn(`Error setting up certificate ${err}`);
+        }
+
+        for (const file of files) {
+          let returnFile: CertFile | undefined;
+
           if (req.body.fileMappings) {
             let fileMappings;
 
             try {
-              fileMappings = JSON.parse(req.body.fileMappings);
+              fileMappings = JSON.parse(req.body.fileMappings) as Record<string, CertFile>;
 
               if (fileMappings[file.filename]) {
-                returnFiles.push({
+                if (fileMappings[file.filename].type === 'rootCert') {
+                  rootCert = fileMappings[file.filename];
+                }
+
+                returnFile = {
                   fileName: file.filename,
                   filePath: pGetRelativePath(file.path),
                   type: fileMappings[file.filename].type,
-                });
+                };
               }
             } catch (err) {
               logger.warn('Error setup storage', err);
             }
           }
-        })
+
+          if (returnFile) {
+            returnFiles.push(returnFile);
+
+            if (certStore) {
+              // Save to certStore for restoring purpose
+              const fileContent = fs.readFileSync(file.path).toString();
+
+              if (rootCert) {
+                // Upload root cert mean that we need to create a new certificate
+                logger.info(`Creating new certificate if needed for root cert ${rootCert.filePath}`);
+                const certId = await certStore.insertCertificateIfNeeded(entityName, {
+                  ...rootCert,
+                  content: fileContent,
+                });
+
+                // Assign id to certificate
+                certificate.id = certId;
+              }
+
+              // Upload privateKey or certChain require certificate
+              if (certificate.id) {
+                await certStore.updateCertificate(certificate.id, {
+                  ...returnFile,
+                  content: fileContent,
+                });
+              } else {
+                logger.warn(`Certificate ${certificate.rootCert?.filePath} is not found in DB`);
+              }
+            }
+          }
+        }
+
+        // Finally assign uploaded files to certificate
+        returnFiles.forEach(returnFile => {
+          certificate![returnFile.type] = returnFile;
+        });
 
         const result: LoadCertResult = {
           status: LoadCertStatus.ok,
+          certificate,
           certs: returnFiles,
         }
 
@@ -453,6 +534,51 @@ export async function createRouter(
         status: LoadProtoStatus.fail,
         message: 'Empty files',
       });
+    });
+  });
+
+  router.delete('/certificates/:entity/:id', async (req, res) => {
+    const { entity, id } = req.params;
+
+    if (!certStore) {
+      res.status(400).send({
+        status: LoadCertStatus.fail,
+        message: 'Certificate store not configured'
+      });
+      return;
+    }
+
+    let ok = false;
+    let message = '';
+
+    const certificate = await certStore.getCertificate(id);
+    const CERT_PATH = getProtoUploadPath(entity, 'certs');
+
+    try {
+      if (certificate) {
+        const pGetAbsolutePath = partial(getAbsolutePath, CERT_PATH);
+
+        await certStore.deleteCertificate(id);
+
+        for (const certFile of [certificate.rootCert, certificate.privateKey, certificate.certChain]) {
+          const filePath = certFile?.filePath ? pGetAbsolutePath(certFile?.filePath) : '';
+
+          if (filePath && fs.existsSync(filePath)) {
+            fs.rmSync(pGetAbsolutePath(filePath));
+          }
+        }
+
+        ok = true;
+      } else {
+        message = 'Certificate not found';
+      }
+    } catch (err) {
+      message = err?.message || 'Unknown error';
+    }
+
+    res.send({
+      ok,
+      message,
     });
   });
 
@@ -500,46 +626,73 @@ export async function createRouter(
     const service: ProtoService = services[serviceName];
     const protoInfo = new ProtoInfo(service, methodName);
 
-    let trueTlsCertificate: typeof tlsCertificate | undefined;
+    const trueTlsCertificate = tlsCertificate ? { ...tlsCertificate } as Certificate : undefined;
 
     if (tlsCertificate) {
-      trueTlsCertificate = { ...tlsCertificate };
-
       const missingCerts: NonNullable<LoadCertResult['missingCerts']> = [];
       const pGetAbsolutePath = partial(getAbsolutePath, CERT_PATH);
 
-      function getCertFromPath(cert: Omit<CertFile, 'type'>, type: 'rootCert' | 'privateKey' | 'certChain') {
-        try {
-          trueTlsCertificate![type] = {
-            fileName: cert.fileName || '',
-            filePath: pGetAbsolutePath(cert.filePath || ''),
-            type,
+      // Get full certfile path and check if it exists
+      // If not, try to use db to recover it
+      // If can not recover, we say that the certfile is missing
+      async function ensureCertFile(cert: CertFile) {
+        const type = cert.type;
+
+        trueTlsCertificate![type] = {
+          fileName: cert.fileName || '',
+          filePath: pGetAbsolutePath(cert.filePath || ''),
+          type,
+        }
+
+        if (!fs.existsSync(trueTlsCertificate![type]!.filePath!)) {
+          let isMissing = true;
+
+          // Handle err
+          if (certStore && trueTlsCertificate?.id) {
+            try {
+              const cert = await certStore.getCertFile(trueTlsCertificate!.id, type);
+
+              logger.info(`Found cert ${cert?.filePath}. File has content?: ${!!cert?.content}`);
+
+              if (cert?.content) {
+                const absoluteFilePath = trueTlsCertificate![type]!.filePath!;
+                logger.info(`Recovering file ${absoluteFilePath}`)
+
+                ensureDirectoryExistence(absoluteFilePath);
+                fs.writeFileSync(absoluteFilePath, cert.content);
+                logger.info(`File recovered at ${absoluteFilePath}`);
+                isMissing = false;
+              }
+            } catch (err) {
+              logger.warn(`Can not find cert in DB or can not recover. Error ${err}`);
+            }
+          } else {
+            logger.warn(`No certStore or no cert id. Can not recover cert`);
+            isMissing = true;
           }
 
-          fs.readFileSync(trueTlsCertificate![type]!.filePath!);
-        } catch (err) {
-          if (err.errno === -2) {
-            // Handle err
+          if (isMissing) {
             missingCerts.push({
               ...cert,
               type,
-              // certificate: tlsCertificate as Certificate,
             });
           }
+        } else {
+          logger.info(`CertFile exists at ${trueTlsCertificate![type]!.filePath}`);
         }
       }
 
       if (!tlsCertificate.useServerCertificate) {
         if (tlsCertificate.rootCert) {
-          getCertFromPath(tlsCertificate.rootCert, 'rootCert');
+          await ensureCertFile(tlsCertificate.rootCert);
         }
 
         if (tlsCertificate.privateKey) {
-          getCertFromPath(tlsCertificate.privateKey, 'privateKey');
+          await ensureCertFile(tlsCertificate.privateKey);
         }
 
         if (tlsCertificate.certChain) {
-          getCertFromPath(tlsCertificate.certChain, 'certChain');
+          await ensureCertFile(tlsCertificate.certChain);
         }
       }
 
@@ -561,7 +714,7 @@ export async function createRouter(
       requestData,
       protoInfo,
       interactive,
-      tlsCertificate: trueTlsCertificate as Certificate
+      tlsCertificate: trueTlsCertificate
     });
 
     const isStreaming =

@@ -139,6 +139,7 @@ export const sendRequestInput = z
       })
       .required(),
     tlsCertificate: z.object({
+      id: z.string().optional(),
       useServerCertificate: z.boolean().optional(),
       rootCert: certFile,
       privateKey: certFile.optional(),
