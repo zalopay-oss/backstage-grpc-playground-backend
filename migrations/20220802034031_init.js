@@ -20,18 +20,6 @@ exports.up = async function (knex) {
           .notNullable()
           .defaultTo(knex.fn.now())
           .comment('The creation time of the cert')
-          
-        // table.string('root_cert_path');
-        // table.string('root_cert_name');
-        // table.text('root_cert_content').comment('Hashed root cert content');
-
-        // table.string('private_key_path');
-        // table.string('private_key_name');
-        // table.text('private_key_content').comment('Hashed private key content');
-
-        // table.string('cert_chain_path');
-        // table.string('cert_chain_name');
-        // table.text('cert_chain_content').comment('Hashed cert chain content');
 
         table.boolean('use_server_certificate').defaultTo(false);
       })
