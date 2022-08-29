@@ -1,5 +1,25 @@
 # Changelog
 
+## [v0.3.0-next.0](https://github.com/zalopay-oss/backstage-grpc-playground-backend/tree/v0.3.0-next.0) (2022-08-29)
+
+**Implemented features**
+
+- Support Proto library https://github.com/zalopay-oss/backstage-grpc-playground/issues/9
+
+[Full Changelog](https://github.com/zalopay-oss/backstage-grpc-playground-backend/compare/v0.2.0-next.0...v0.3.0-next.0)
+
+## [v0.2.0-next.0](https://github.com/zalopay-oss/backstage-grpc-playground-backend/tree/v0.2.0-next.0) (2022-08-04)
+
+**Implemented features**:
+
+- Support TLS for requests https://github.com/zalopay-oss/backstage-grpc-playground/issues/1
+
+[Full Changelog](https://github.com/zalopay-oss/backstage-grpc-playground-backend/compare/v0.1.3-b...v0.2.0-next.0)
+
+## [v0.1.3-b](https://github.com/zalopay-oss/backstage-grpc-playground-backend/tree/v0.1.3-b) (2022-07-25)
+
+[Full Changelog](https://github.com/zalopay-oss/backstage-grpc-playground-backend/compare/v0.1.3...v0.1.3-b)
+
 ## [v0.1.3](https://github.com/zalopay-oss/backstage-grpc-playground-backend/tree/v0.1.3) (2022-07-15)
 
 [Full Changelog](https://github.com/zalopay-oss/backstage-grpc-playground-backend/compare/v0.1.2...v0.1.3)
