@@ -14,10 +14,11 @@
  * limitations under the License.
  */
 
-import { createServiceBuilder, loadBackendConfig, UrlReaders } from '@backstage/backend-common';
+import { createServiceBuilder, DatabaseManager, loadBackendConfig, UrlReaders } from '@backstage/backend-common';
 import { ScmIntegrations } from '@backstage/integration';
 import { Server } from 'http';
 import { Logger } from 'winston';
+import { CertStores } from './CertStore';
 import { createRouter } from './router';
 
 export interface ServerOptions {
@@ -34,10 +35,19 @@ export async function startStandaloneServer(
   const config = await loadBackendConfig({ logger, argv: process.argv });
   const integrations = ScmIntegrations.fromConfig(config);
   const reader = UrlReaders.default({ logger, config });
+  const database = DatabaseManager.fromConfig(config).forPlugin('backstage-grpc-playground-backend');
+
+  const certStore = await CertStores.fromConfig(config, {
+    database,
+    logger,
+  });
+
   const router = await createRouter({
     config: config.getOptional('grpcPlayground'),
     logger,
     integrations,
+    database,
+    certStore,
     reader
   });
 

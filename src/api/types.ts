@@ -1,4 +1,7 @@
+import { LoadCertStatus, LoadProtoStatus } from "../service/utils";
+
 export interface Certificate {
+  id?: string;
   rootCert: CertFile;
   privateKey?: CertFile;
   certChain?: CertFile;
@@ -11,7 +14,12 @@ export interface BaseFile {
   filePath: string;
 }
 
-export interface CertFile extends BaseFile {}
+export type CertType = 'rootCert' | 'privateKey' | 'certChain';
+
+export interface CertFile extends BaseFile {
+  type: CertType;
+  content?: string;
+}
 
 export interface FileWithImports extends BaseFile {
   imports?: PlaceholderFile[];
@@ -45,3 +53,11 @@ export interface EntitySpec extends BaseEntitySpec {
   files: PlaceholderFile[];
   imports?: PlaceholderFile[];
 }
+
+export type LoadCertResult = {
+  certs?: CertFile[];
+  status?: LoadCertStatus;
+  missingCerts?: Partial<CertFile>[];
+  message?: string;
+  certificate?: Certificate;
+};

@@ -14,13 +14,27 @@
  * limitations under the License.
  */
 
-import { getVoidLogger, UrlReader } from '@backstage/backend-common';
+import { DatabaseManager, getVoidLogger, PluginDatabaseManager, UrlReader } from '@backstage/backend-common';
+import { ConfigReader } from '@backstage/config';
 import { ScmIntegrationRegistry } from '@backstage/integration';
 import { PlaceholderResolverRead } from '@backstage/plugin-catalog-backend';
 import express from 'express';
 import request from 'supertest';
 
 import { createRouter } from './router';
+
+function createDatabase(): PluginDatabaseManager {
+  return DatabaseManager.fromConfig(
+    new ConfigReader({
+      backend: {
+        database: {
+          client: 'better-sqlite3',
+          connection: ':memory:',
+        },
+      },
+    }),
+  ).forPlugin('backstage-grpc-playground-backend');
+}
 
 describe('createRouter', () => {
   let app: express.Express;
@@ -32,6 +46,7 @@ describe('createRouter', () => {
     const router = await createRouter({
       logger: getVoidLogger(),
       reader,
+      database: createDatabase(),
       integrations: {} as unknown as ScmIntegrationRegistry,
     });
 

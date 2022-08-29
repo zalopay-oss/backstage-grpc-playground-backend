@@ -197,6 +197,7 @@ export class GRPCRequest extends EventEmitter {
    * @param ServiceClient
    */
   private getClient(ServiceClient: ServiceClientConstructor): ServiceClient {
+    const logger = getLogger();
     let creds = credentials.createInsecure();
     let options = {};
 
@@ -211,11 +212,21 @@ export class GRPCRequest extends EventEmitter {
       if (this.tlsCertificate.useServerCertificate === true) {
         creds = credentials.createSsl();
       } else {
-        creds = credentials.createSsl(
-          fs.readFileSync(this.tlsCertificate.rootCert.filePath),
-          this.tlsCertificate.privateKey && fs.readFileSync(this.tlsCertificate.privateKey.filePath),
-          this.tlsCertificate.certChain && fs.readFileSync(this.tlsCertificate.certChain.filePath),
-        );
+        try {
+          creds = credentials.createSsl(
+            fs.readFileSync(this.tlsCertificate.rootCert.filePath),
+            this.tlsCertificate.privateKey && fs.readFileSync(this.tlsCertificate.privateKey.filePath),
+            this.tlsCertificate.certChain && fs.readFileSync(this.tlsCertificate.certChain.filePath),
+          );
+        } catch (err) {
+          logger.error(`Error reading tls certificate: ${err}`);
+
+          this.emit(GRPCEventType.ERROR, {
+            details: err.message,
+          }, {});
+
+          this.emit(GRPCEventType.END);
+        }
       }
     }
 
