@@ -8,36 +8,24 @@ import { DefaultEncoder } from './encrypt';
 
 import { CertFile, Certificate, CertType } from '../../api';
 
-type Options = {
-  database: Knex;
-  secretKey: string;
-  initVector: string;
+const packageName = 'backstage-grpc-playground-backend';
+
+// Manual resolve package path
+function manualResolvePackagePath(name: string, ...paths: string[]) {
+  const req =
+    typeof __non_webpack_require__ === 'undefined'
+      ? require
+      : __non_webpack_require__;
+
+  return resolvePath(req.resolve(`${name}/package.json`), '..', ...paths);
 }
-
-
 
 let migrationsDir: string;
 
 try {
-  migrationsDir = resolvePackagePath(
-    'backstage-grpc-playground-backend',
-    'migrations'
-  );
+  migrationsDir = resolvePackagePath(packageName, 'migrations');
 } catch (err) {
-  // Manual resolve package path, works on dev when linking packages
-  function manualResolvePackagePath(name: string, ...paths: string[]) {
-    const req =
-      typeof __non_webpack_require__ === 'undefined'
-        ? require
-        : __non_webpack_require__;
-  
-    return resolvePath(req.resolve(`${name}/package.json`), '..', ...paths);
-  }
-  
-  migrationsDir = manualResolvePackagePath(
-    'backstage-grpc-playground-backend',
-    'migrations'
-  );
+  migrationsDir = manualResolvePackagePath(packageName, 'migrations');
 }
 
 const TABLE_CERTIFICATES = 'entity_certificates';
@@ -57,6 +45,12 @@ type CertificateFileRow = {
   file_path?: string;
   file_name: string;
   type: CertType;
+}
+
+type Options = {
+  database: Knex;
+  secretKey: string;
+  initVector: string;
 }
 
 export class DatabaseCertStore implements CertStore {
@@ -116,12 +110,12 @@ export class DatabaseCertStore implements CertStore {
       })
       .select('file_name', 'file_path', 'type');
 
-    const dictById = certFilesWithCertificateId.reduce((dict, { id, file_name, type, file_path }) => {
-      if (!dict[id]) {
-        dict[id] = {} as Certificate;
+    const dictById = certFilesWithCertificateId.reduce((dict, { id: certId, file_name, type, file_path }) => {
+      if (!dict[certId]) {
+        dict[certId] = {} as Certificate;
       }
 
-      dict[id][type] = {
+      dict[certId][type] = {
         fileName: file_name,
         filePath: file_path,
         type,
