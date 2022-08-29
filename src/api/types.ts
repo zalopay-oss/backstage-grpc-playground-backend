@@ -1,4 +1,4 @@
-import { LoadCertStatus, LoadProtoStatus } from "../service/utils";
+import { LoadCertStatus } from "../service/utils";
 
 export interface Certificate {
   id?: string;

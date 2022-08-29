@@ -26,6 +26,7 @@ import {
   getFileNameFromPath,
   REPO_URL,
   getLogger,
+  getProtoUploadPath,
 } from '../service/utils';
 import { genDoc, GenDocConfig } from './docGenerator';
 
@@ -75,7 +76,7 @@ export async function getProtosFromEntitySpec(
   placeholderProcessor: CustomPlaceholderProcessor,
 ) {
   const logger = getLogger();
-  
+
   try {
     const { files: files, imports } =
       await placeholderProcessor.processEntitySpec(entitySpec);
@@ -169,9 +170,7 @@ export async function loadProtosFromFile(
   for (const protoFile of protoFiles) {
     const { filePath, imports } = protoFile;
     const absoluteFilePath = pGetAbsolutePath(filePath);
-    const absoluteImportPaths = (imports || [])
-      .map(p => p.filePath)
-      .map(pGetAbsolutePath);
+    const absoluteImportPaths = (imports || []).map(p => pGetAbsolutePath(p.filePath));
 
     // Hide full filepath
     const relativeImports = uniqBy(
@@ -183,11 +182,15 @@ export async function loadProtosFromFile(
     );
 
     try {
+      // packages/backend/proto
+      const protoPath = getProtoUploadPath('');
+
       const allImports = getAllPossibleSubPaths(
-        basePath,
+        protoPath,
         absoluteFilePath,
         ...absoluteImportPaths,
       );
+
       const proto = await fromFileName(absoluteFilePath, allImports);
 
       let protoDoc = '';
