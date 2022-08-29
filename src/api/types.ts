@@ -1,4 +1,4 @@
-import { LoadCertStatus, LoadProtoStatus } from "../service/utils";
+import { LoadCertStatus } from "../service/utils";
 
 export interface Certificate {
   id?: string;
@@ -36,6 +36,14 @@ export interface WritableFile extends PlaceholderFile {
   imports?: WritableFile[];
 }
 
+export interface Library {
+  isPreloaded?: boolean;
+  version?: string;
+  url?: string;
+  name: string;
+  path?: string;
+}
+
 export interface GRPCTarget {
   [key: string]: GRPCTargetInfo;
 }
@@ -52,6 +60,7 @@ export interface BaseEntitySpec {
 export interface EntitySpec extends BaseEntitySpec {
   files: PlaceholderFile[];
   imports?: PlaceholderFile[];
+  libraries?: Library[];
 }
 
 export type LoadCertResult = {

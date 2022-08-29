@@ -5,7 +5,7 @@ import lodash from 'lodash';
 import path from 'path';
 import { Logger } from 'winston';
 
-export const REPO_URL = 'https://github.com/zalopay-oss/backstage-grpc-playground-backend'
+export const REPO_URL = 'https://github.com/zalopay-oss/backstage-grpc-playground-backend';
 
 let _logger: Logger;
 
@@ -20,6 +20,8 @@ export const getLogger = () => {
 export const getProtoUploadPath = (entityName: string, defaultUploadPath = 'proto') => {
   return path.join(process.cwd(), defaultUploadPath, entityName)
 };
+
+export const LIBRARY_BASE_PATH = getProtoUploadPath('libraries');
 
 export enum LoadProtoStatus {
   ok = 1,
@@ -108,6 +110,14 @@ export async function validateRequestBody<T>(
   }
 }
 
+export const library = z.object({
+  name: z.string(),
+  path: z.string().optional(),
+  version: z.string().optional(),
+  url: z.string().optional(),
+  isPreloaded: z.boolean().optional(),
+});
+
 export const placeholderFile = (() => {
   const baseFile = {
     fileName: z.string(),
@@ -161,6 +171,7 @@ export const getProtoInput = z.object({
     definition: z.string().optional(),
     files: z.array(placeholderFile),
     imports: z.array(placeholderFile).optional(),
+    libraries: z.array(library).optional(),
     targets: z.unknown(),
   }),
   isGenDoc: z.boolean().optional(),
