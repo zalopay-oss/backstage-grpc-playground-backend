@@ -144,7 +144,7 @@ export async function createRouter(
       const { protos, status, missingImports } = await loadProtos(
         UPLOAD_PATH,
         preloadedProtos,
-        { ...genDocConfig, enabled: isGenDoc },
+        { ...genDocConfig, enabled: !!isGenDoc },
       );
 
       result.protos.push(...protos);
@@ -382,6 +382,7 @@ export async function createRouter(
           isGenDoc = JSON.parse(isGenDoc);
         } catch (err) {
           // Ignore
+          isGenDoc = false;
         }
 
         const loadProtoResult = await loadProtos(UPLOAD_PATH, filesWithImports, { ...genDocConfig, enabled: isGenDoc });
