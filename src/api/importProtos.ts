@@ -78,7 +78,7 @@ export async function getProtosFromEntitySpec(
   const logger = getLogger();
 
   try {
-    const { files: files, imports } =
+    const { files: files, imports, libraries } =
       await placeholderProcessor.processEntitySpec(entitySpec);
 
     const pSaveProtoTextAsFile = partial(saveProtoTextAsFile, basePath);
@@ -86,6 +86,7 @@ export async function getProtosFromEntitySpec(
     return {
       files: files.map(pSaveProtoTextAsFile),
       imports: imports.map(pSaveProtoTextAsFile),
+      libraries: libraries.map(pSaveProtoTextAsFile)
     };
   } catch (err) {
     logger.error('Error getProtosFromEntitySpec', err);

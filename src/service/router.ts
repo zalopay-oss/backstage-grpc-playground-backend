@@ -177,11 +177,11 @@ export async function createRouter(
       );
 
       if (getProtoData) {
-        const { files: protoFiles, imports: commonImports } = getProtoData;
+        const { files: protoFiles, imports: commonImports, libraries } = getProtoData;
 
         const filesToLoad: FileWithImports[] = protoFiles.map(f => ({
           ...f,
-          imports: commonImports.concat((f.imports || []).flat()),
+          imports: commonImports.concat((f.imports || []).flat()).concat(libraries),
         }));
 
         if (result.missingImports?.length) {
@@ -856,6 +856,7 @@ function parseEntitySpec(spec: EntitySpec) {
   const entitySpec: EntitySpec = {
     files: toGet,
     imports: spec.imports || [],
+    libraries: spec.libraries,
     targets: spec.targets as GRPCTarget,
   };
 

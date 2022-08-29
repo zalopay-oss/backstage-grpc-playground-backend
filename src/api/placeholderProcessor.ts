@@ -4,15 +4,40 @@ import {
 } from '@backstage/plugin-catalog-backend';
 import { JsonValue } from '@backstage/types';
 import yaml from 'yaml';
-import { EntitySpec, PlaceholderFile, WritableFile } from './types';
+import fs from 'fs';
+import path from 'path';
+import { EntitySpec, Library, PlaceholderFile, WritableFile } from './types';
+import { getFileNameFromPath, LIBRARY_BASE_PATH, resolveRelativePath } from '../service/utils';
 
+interface ProcessResult {
+  files: WritableFile[];
+  imports: WritableFile[];
+  libraries: WritableFile[];
+}
+function getAllFiles(dir: string, parent?: string) {
+  const fileNames: string[] = [];
+  const fileOrDirs = fs.readdirSync(dir, { withFileTypes :true })
+
+  fileOrDirs.forEach(fileOrDir => {
+    const currentPath = parent ? path.join(parent, fileOrDir.name) : fileOrDir.name;
+    if (fileOrDir.isDirectory()) {
+      // console.log('OUTPUT ~ getAllFiles ~ directory', fileOrDir.name);
+      fileNames.push(...getAllFiles(path.join(dir, fileOrDir.name), currentPath));
+    } else {
+      fileNames.push(currentPath);
+    }
+  });
+
+  return fileNames;
+}
 export class CustomPlaceholderProcessor {
-  constructor(private readonly options: PlaceholderProcessorOptions) {}
+  constructor(private readonly options: PlaceholderProcessorOptions) { }
 
   async processEntitySpec(
     entitySpec: EntitySpec,
-  ): Promise<{ files: WritableFile[]; imports: WritableFile[] }> {
-    const { files, imports } = entitySpec;
+  ): Promise<ProcessResult> {
+    const { files, imports, libraries } = entitySpec;
+    console.log('OUTPUT ~ CustomPlaceholderProcessor ~ libraries', libraries);
 
     const read = async (url: string): Promise<Buffer> => {
       if (this.options.reader.readUrl) {
@@ -22,6 +47,52 @@ export class CustomPlaceholderProcessor {
       }
       return this.options.reader.read(url);
     };
+
+    const readLibrary = async (lib: Library) => {
+      const { name: libName, path: libPath = '', version = 'default', url } = lib;
+      const prefix = path.join(...[libName, version, libPath].filter(Boolean));
+      const libDir = resolveRelativePath(LIBRARY_BASE_PATH, prefix);
+      console.log('OUTPUT ~ CustomPlaceholderProcessor ~ readLibrary ~ libDir', libDir);
+      // Check if we have downloaded this library before
+      if (fs.existsSync(libDir)) {
+        try {
+          const libLocalFileNames = getAllFiles(libDir);
+          console.info(`CustomPlaceholderProcessor ~ readLibrary ~ downloaded lib before ${libDir}, files ${libLocalFileNames}`);
+  
+          return libLocalFileNames.map(fileName => {
+            const writableFile: WritableFile = {
+              fileName: fileName,
+              filePath: path.join(libDir, fileName),
+            };
+  
+            return writableFile;
+          });
+        } catch {
+          // Ignore
+        }
+      }
+      
+      if (url && this.options.reader.readTree) {
+        // also change directory
+        console.info(`CustomPlaceholderProcessor ~ readLibrary ~ downloading library`)
+        const readTreeResult = await this.options.reader.readTree(url);
+        const treeFiles = await readTreeResult.files();
+
+        return Promise.all(treeFiles.map(async (file): Promise<WritableFile> => {
+          const content = await file.content();
+          const fileName = getFileNameFromPath(file.path);
+          console.log('OUTPUT ~ CustomPlaceholderProcessor ~ returnPromise.all ~ file.path', file.path);
+          
+          return {
+            fileName,
+            filePath: path.join(libDir, file.path),
+            content: content.toString('utf-8')
+          };
+        }));
+      }
+
+      return [];
+    }
 
     const resolveUrl = (url: string, base: string): string =>
       this.options.integrations.resolveUrl({
@@ -44,6 +115,7 @@ export class CustomPlaceholderProcessor {
           value: resolverValue,
           baseUrl: '',
           read,
+          emit: () => { }, // turnoff ts complains, we dont emit anything
           resolveUrl,
         })) as string;
       }
@@ -68,14 +140,18 @@ export class CustomPlaceholderProcessor {
     const resolveFiles = Promise.all(files.map(placeholderToFile));
     const resolveImports = Promise.all((imports || []).map(placeholderToFile));
 
-    const [resolvedFiles, resolvedImports] = await Promise.all([
+    const resolveLibraries = Promise.all((libraries || []).map(readLibrary));
+
+    const [resolvedFiles, resolvedImports, resolvedLibraries] = await Promise.all([
       resolveFiles,
       resolveImports,
+      resolveLibraries
     ]);
 
     return {
       files: resolvedFiles,
       imports: resolvedImports,
+      libraries: resolvedLibraries.flat(),
     };
   }
 }
