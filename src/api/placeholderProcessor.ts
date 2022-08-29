@@ -21,7 +21,6 @@ function getAllFiles(dir: string, parent?: string) {
   fileOrDirs.forEach(fileOrDir => {
     const currentPath = parent ? path.join(parent, fileOrDir.name) : fileOrDir.name;
     if (fileOrDir.isDirectory()) {
-      // console.log('OUTPUT ~ getAllFiles ~ directory', fileOrDir.name);
       fileNames.push(...getAllFiles(path.join(dir, fileOrDir.name), currentPath));
     } else {
       fileNames.push(currentPath);
