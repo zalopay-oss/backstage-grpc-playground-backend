@@ -293,6 +293,48 @@ export async function createRouter(
     res.send(result);
   });
 
+  router.get('/proto-text/:entity', async (req, res) => {
+    const { entity: entityName } = req.params;
+    const filePath = req.query.filePath as string | undefined;
+
+    if (!filePath || typeof filePath !== 'string') {
+      res.status(400).json({
+        status: LoadProtoStatus.fail,
+        message: 'Must provide file path'
+      });
+      return;
+    }
+
+    if (typeof filePath !== 'string') {
+      res.status(400).json({
+        status: LoadProtoStatus.fail,
+        message: 'filePath must be a valid string'
+      });
+      return;
+    }
+
+    const UPLOAD_PATH = getProtoUploadPath(entityName);
+    const absoluteFilePath = getAbsolutePath(
+      UPLOAD_PATH,
+      filePath,
+    );
+
+    if (!fs.existsSync(absoluteFilePath)) {
+      res.status(400).json({
+        status: LoadProtoStatus.fail,
+        message: 'Not found'
+      });
+      return;
+    }
+
+    const protoText = fs.readFileSync(absoluteFilePath, 'utf-8');
+
+    res.json({
+      status: LoadProtoStatus.ok,
+      protoText
+    });
+  })
+
   router.post('/upload-proto/:entity', async (req, res) => {
     const { entity: entityName } = req.params;
     const UPLOAD_PATH = getProtoUploadPath(entityName);
@@ -622,6 +664,7 @@ export async function createRouter(
       // Get full certfile path and check if it exists
       // If not, try to use db to recover it
       // If can not recover, we say that the certfile is missing
+      // eslint-disable-next-line no-inner-declarations
       async function ensureCertFile(cert: CertFile) {
         const type = cert.type;
 
@@ -637,16 +680,16 @@ export async function createRouter(
           // Handle err
           if (certStore && trueTlsCertificate?.id) {
             try {
-              const cert = await certStore.getCertFile(trueTlsCertificate!.id, type);
+              const certFile = await certStore.getCertFile(trueTlsCertificate!.id, type);
 
-              logger.info(`Found cert ${cert?.filePath}. File has content?: ${!!cert?.content}`);
+              logger.info(`Found cert ${certFile?.filePath}. File has content?: ${!!certFile?.content}`);
 
-              if (cert?.content) {
+              if (certFile?.content) {
                 const absoluteFilePath = trueTlsCertificate![type]!.filePath!;
                 logger.info(`Recovering file ${absoluteFilePath}`)
 
                 ensureDirectoryExistence(absoluteFilePath);
-                fs.writeFileSync(absoluteFilePath, cert.content);
+                fs.writeFileSync(absoluteFilePath, certFile.content);
                 logger.info(`File recovered at ${absoluteFilePath}`);
                 isMissing = false;
               }

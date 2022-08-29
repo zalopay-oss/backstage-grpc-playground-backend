@@ -22,7 +22,6 @@ import { load as grpcDef } from '@grpc/proto-loader';
 export interface Proto {
   fileName: string;
   filePath: string;
-  protoText: string;
   imports?: PlaceholderFile[];
   ast: GrpcObject;
   protoDoc?: string;
@@ -69,12 +68,9 @@ export async function fromFileName(
     keepCase: true,
   });
 
-  const protoText = await promisifyRead(protoPath);
-
   return {
     fileName: protoPath.split(path.sep).pop() || '',
     filePath: protoPath,
-    protoText,
     ast: protoAST,
     root,
   };
