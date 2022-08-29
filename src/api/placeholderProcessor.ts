@@ -8,6 +8,7 @@ import fs from 'fs';
 import path from 'path';
 import { EntitySpec, Library, PlaceholderFile, WritableFile } from './types';
 import { getFileNameFromPath, LIBRARY_BASE_PATH, resolveRelativePath } from '../service/utils';
+import { Logger } from 'winston';
 
 interface ProcessResult {
   files: WritableFile[];
@@ -16,7 +17,7 @@ interface ProcessResult {
 }
 function getAllFiles(dir: string, parent?: string) {
   const fileNames: string[] = [];
-  const fileOrDirs = fs.readdirSync(dir, { withFileTypes :true })
+  const fileOrDirs = fs.readdirSync(dir, { withFileTypes: true })
 
   fileOrDirs.forEach(fileOrDir => {
     const currentPath = parent ? path.join(parent, fileOrDir.name) : fileOrDir.name;
@@ -30,13 +31,17 @@ function getAllFiles(dir: string, parent?: string) {
   return fileNames;
 }
 export class CustomPlaceholderProcessor {
-  constructor(private readonly options: PlaceholderProcessorOptions) { }
+  constructor(private readonly options: PlaceholderProcessorOptions & {
+    logger: Logger;
+  }) { }
 
   async processEntitySpec(
     entitySpec: EntitySpec,
   ): Promise<ProcessResult> {
+    const logger = this.options.logger;
     const { files, imports, libraries } = entitySpec;
-    console.log('OUTPUT ~ CustomPlaceholderProcessor ~ libraries', libraries);
+
+    logger.info(`OUTPUT ~ CustomPlaceholderProcessor ~ libraries: ${libraries}`);
 
     const read = async (url: string): Promise<Buffer> => {
       if (this.options.reader.readUrl) {
@@ -51,40 +56,44 @@ export class CustomPlaceholderProcessor {
       const { name: libName, path: libPath = '', version = 'default', url } = lib;
       const prefix = path.join(...[libName, version, libPath].filter(Boolean));
       const libDir = resolveRelativePath(LIBRARY_BASE_PATH, prefix);
-      console.log('OUTPUT ~ CustomPlaceholderProcessor ~ readLibrary ~ libDir', libDir);
+
+      logger.info(`OUTPUT ~ CustomPlaceholderProcessor ~ readLibrary ~ libDir: ${libDir}`);
+
       // Check if we have downloaded this library before
       if (fs.existsSync(libDir)) {
         try {
           const libLocalFileNames = getAllFiles(libDir);
-          console.info(`CustomPlaceholderProcessor ~ readLibrary ~ downloaded lib before ${libDir}, files ${libLocalFileNames}`);
-  
+          logger.info(`CustomPlaceholderProcessor ~ readLibrary ~ downloaded lib before ${libDir}, files ${libLocalFileNames}`);
+
           return libLocalFileNames.map(fileName => {
             const writableFile: WritableFile = {
               fileName: fileName,
               filePath: path.join(libDir, fileName),
             };
-  
+
             return writableFile;
           });
         } catch {
           // Ignore
         }
       }
-      
+
       if (url && this.options.reader.readTree) {
-        // also change directory
-        console.info(`CustomPlaceholderProcessor ~ readLibrary ~ downloading library`)
+        logger.info(`CustomPlaceholderProcessor ~ readLibrary ~ downloading library url ${url}`);
+
         const readTreeResult = await this.options.reader.readTree(url);
         const treeFiles = await readTreeResult.files();
 
         return Promise.all(treeFiles.map(async (file): Promise<WritableFile> => {
           const content = await file.content();
           const fileName = getFileNameFromPath(file.path);
-          console.log('OUTPUT ~ CustomPlaceholderProcessor ~ returnPromise.all ~ file.path', file.path);
-          
+          const fullPath = path.join(libDir, file.path);
+
+          logger.info(`OUTPUT ~ CustomPlaceholderProcessor ~ library file path: ${file.path}, full path ${fullPath}`);
+
           return {
             fileName,
-            filePath: path.join(libDir, file.path),
+            filePath: fullPath,
             content: content.toString('utf-8')
           };
         }));

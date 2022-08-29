@@ -80,6 +80,7 @@ export async function createRouter(
     resolvers: placeholderResolvers,
     reader,
     integrations,
+    logger,
   });
 
   const genDocConfig = (config as any)?.document as GenDocConfig | undefined;
