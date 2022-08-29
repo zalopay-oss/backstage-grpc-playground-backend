@@ -52,7 +52,7 @@ export function saveProtoTextAsFile(
   basePath: string,
   file: WritableFile,
 ): PlaceholderFile {
-  const filePath = path.resolve(basePath, file.filePath);
+  const filePath = path.isAbsolute(file.filePath) ? file.filePath : path.resolve(basePath, file.filePath);
 
   if (!fs.existsSync(filePath)) {
     ensureDirectoryExistence(filePath);
