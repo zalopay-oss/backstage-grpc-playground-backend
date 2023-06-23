@@ -17,7 +17,6 @@
 import { DatabaseManager, getVoidLogger, PluginDatabaseManager, UrlReader } from '@backstage/backend-common';
 import { ConfigReader } from '@backstage/config';
 import { ScmIntegrationRegistry } from '@backstage/integration';
-import { PlaceholderResolverRead } from '@backstage/plugin-catalog-backend';
 import express from 'express';
 import request from 'supertest';
 
@@ -40,8 +39,7 @@ describe('createRouter', () => {
   let app: express.Express;
 
   beforeAll(async () => {
-    const read: jest.MockedFunction<PlaceholderResolverRead> = jest.fn();
-    const reader: UrlReader = { read, readTree: jest.fn(), search: jest.fn() };
+    const reader: jest.Mocked<UrlReader> = { readUrl: jest.fn(), readTree: jest.fn(), search: jest.fn() };
 
     const router = await createRouter({
       logger: getVoidLogger(),

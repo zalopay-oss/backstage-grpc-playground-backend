@@ -44,12 +44,9 @@ export class CustomPlaceholderProcessor {
     logger.info(`OUTPUT ~ CustomPlaceholderProcessor ~ libraries: ${libraries}`);
 
     const read = async (url: string): Promise<Buffer> => {
-      if (this.options.reader.readUrl) {
-        const response = await this.options.reader.readUrl(url);
-        const buffer = await response.buffer();
-        return buffer;
-      }
-      return this.options.reader.read(url);
+      const response = await this.options.reader.readUrl(url);
+      const buffer = await response.buffer();
+      return buffer;
     };
 
     const readLibrary = async (lib: Library) => {
