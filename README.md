@@ -47,6 +47,7 @@ export default async function createPlugin(
     logger: env.logger,
     reader,
     integrations,
+    database: env.database,
   });
 }
 ```
