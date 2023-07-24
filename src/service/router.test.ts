@@ -16,8 +16,8 @@
 
 import { DatabaseManager, getVoidLogger, PluginDatabaseManager, UrlReader } from '@backstage/backend-common';
 import { ConfigReader } from '@backstage/config';
-import { ScmIntegrationRegistry } from '@backstage/integration';
-import { PlaceholderResolverRead } from '@backstage/plugin-catalog-backend';
+import { ScmIntegrations } from '@backstage/integration';
+//import { PlaceholderResolverRead } from '@backstage/plugin-catalog-backend';
 import express from 'express';
 import request from 'supertest';
 
@@ -33,21 +33,21 @@ function createDatabase(): PluginDatabaseManager {
         },
       },
     }),
-  ).forPlugin('backstage-grpc-playground-backend');
+  ).forPlugin('backstage-grpc-playground-backend-new');
 }
 
 describe('createRouter', () => {
   let app: express.Express;
 
   beforeAll(async () => {
-    const read: jest.MockedFunction<PlaceholderResolverRead> = jest.fn();
-    const reader: UrlReader = { read, readTree: jest.fn(), search: jest.fn() };
+    // const readUrl: jest.MockedFunction<PlaceholderResolverRead> = jest.fn();
+    const reader: UrlReader = { readUrl: jest.fn(), readTree: jest.fn(), search: jest.fn() };
 
     const router = await createRouter({
       logger: getVoidLogger(),
       reader,
       database: createDatabase(),
-      integrations: {} as unknown as ScmIntegrationRegistry,
+      integrations: {} as unknown as ScmIntegrations,
     });
 
     app = express().use(router);

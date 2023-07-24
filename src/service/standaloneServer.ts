@@ -30,12 +30,12 @@ export interface ServerOptions {
 export async function startStandaloneServer(
   options: ServerOptions,
 ): Promise<Server> {
-  const logger = options.logger.child({ service: 'backstage-grpc-playground-backend' });
+  const logger = options.logger.child({ service: 'backstage-grpc-playground-backend-new' });
   logger.debug('Starting application server...');
   const config = await loadBackendConfig({ logger, argv: process.argv });
   const integrations = ScmIntegrations.fromConfig(config);
   const reader = UrlReaders.default({ logger, config });
-  const database = DatabaseManager.fromConfig(config).forPlugin('backstage-grpc-playground-backend');
+  const database = DatabaseManager.fromConfig(config).forPlugin('backstage-grpc-playground-backend-new');
 
   const certStore = await CertStores.fromConfig(config, {
     database,

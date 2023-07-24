@@ -8,7 +8,7 @@ import { DefaultEncoder } from './encrypt';
 
 import { CertFile, Certificate, CertType } from '../../api';
 
-const packageName = 'backstage-grpc-playground-backend';
+const packageName = 'backstage-grpc-playground-backend-new';
 
 // Manual resolve package path
 function manualResolvePackagePath(name: string, ...paths: string[]) {
