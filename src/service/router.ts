@@ -7,7 +7,7 @@ import { v4 as uuid } from 'uuid';
 import fs from 'fs';
 import { PlaceholderResolver } from '@backstage/plugin-catalog-backend';
 import { partial, uniqBy } from 'lodash';
-import { ScmIntegrationRegistry } from '@backstage/integration';
+import { ScmIntegrations } from '@backstage/integration';
 
 import {
   ProtoService,
@@ -56,7 +56,7 @@ export interface RouterOptions {
   certStore?: CertStore;
   cacheClient?: CacheClient;
   database: PluginDatabaseManager;
-  integrations: ScmIntegrationRegistry;
+  integrations: ScmIntegrations;
 }
 
 const getTime = () => new Date().toLocaleTimeString();

@@ -16,7 +16,7 @@
 
 import { DatabaseManager, getVoidLogger, PluginDatabaseManager, UrlReader } from '@backstage/backend-common';
 import { ConfigReader } from '@backstage/config';
-import { ScmIntegrationRegistry } from '@backstage/integration';
+import { ScmIntegrations } from '@backstage/integration';
 import express from 'express';
 import request from 'supertest';
 
@@ -39,13 +39,13 @@ describe('createRouter', () => {
   let app: express.Express;
 
   beforeAll(async () => {
-    const reader: jest.Mocked<UrlReader> = { readUrl: jest.fn(), readTree: jest.fn(), search: jest.fn() };
+    const reader: UrlReader = { readUrl: jest.fn(), readTree: jest.fn(), search: jest.fn() };
 
     const router = await createRouter({
       logger: getVoidLogger(),
       reader,
       database: createDatabase(),
-      integrations: {} as unknown as ScmIntegrationRegistry,
+      integrations: {} as unknown as ScmIntegrations,
     });
 
     app = express().use(router);

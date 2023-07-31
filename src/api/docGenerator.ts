@@ -226,7 +226,7 @@ export async function genDoc(protoPath: string, imports?: string[], genDocConfig
   }
 
   let command = `cd ${protoDir} \
-      && yarn protoc --doc_out=${protoDir} --doc_opt=markdown,${docPath}`;
+      && yarn run --top-level protoc --doc_out=${protoDir} --doc_opt=markdown,${docPath}`;
 
   if (imports) {
     imports.forEach((dir) => {
